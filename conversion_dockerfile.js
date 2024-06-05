@@ -31,30 +31,31 @@ COPY . .
 
 # Set the command to run py2wasm on the Python file and save the output in /app/output.wasm
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["py2wasm ${fileName} -o /app/output.wasm"]
+CMD ["py2wasm ${fileName} -o /app/output.wasm || tail -f /dev/null"]
 `;
 }
-
-function generateJavaDockerfile(fileName) {
-  return `
-# Use the latest Ubuntu image as the base
-FROM ubuntu:latest
-
-# Install Java and necessary tools
-RUN apt-get update && \\
-    apt-get install -y openjdk-11-jdk maven
-
-# Set the working directory
-WORKDIR /app
-
-# Copy the application code
-COPY . .
-
-# Set the command to compile Java with Maven and convert to WebAssembly
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["mvn clean package && echo 'Java to wasm conversion command here'"]
-`;
-}
+function generateJavaDockerfile() {
+    return `
+  # Use the latest Ubuntu image as the base
+  FROM ubuntu:latest
+  
+  # Install Java and necessary tools
+  RUN apt-get update && \\
+      apt-get install -y openjdk-11-jdk maven wget && \\
+      wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-compiler/0.4/jwebassembly-compiler-0.4.jar -O /usr/local/jwebassembly-compiler-0.4.jar && \\
+      wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-api/0.4/jwebassembly-api-0.4.jar -O /usr/local/jwebassembly-api-0.4.jar
+  
+  # Set the working directory
+  WORKDIR /app
+  
+  # Copy the application code
+  COPY . .
+  
+  # Set the command to compile Java with Maven and convert to WebAssembly
+  ENTRYPOINT ["/bin/bash", "-c"]
+  CMD ["cd /app && mvn clean package && java -cp /usr/local/jwebassembly-compiler-0.4.jar:/app/target/simple-maven-project-1.0-SNAPSHOT.jar de.inetsoftware.jwebassembly.JWebAssembly target/classes/\${FILE} -o /app/output.wasm || tail -f /dev/null"]
+  `;
+  }
 
 function generateDockerfile(language, filePath) {
   const fileName = path.basename(filePath);
@@ -63,7 +64,7 @@ function generateDockerfile(language, filePath) {
   if (language === 'python') {
     dockerfileContent = generatePythonDockerfile(fileName);
   } else if (language === 'java') {
-    dockerfileContent = generateJavaDockerfile(fileName);
+    dockerfileContent = generateJavaDockerfile();
   } else {
     console.error('Unsupported language. Please use "python" or "java".');
     process.exit(1);
@@ -76,13 +77,16 @@ function generateDockerfile(language, filePath) {
   exec(`docker build -f ${dockerfilePath} -t ${dockerImage} .`, (err, stdout, stderr) => {
     if (err) {
       console.error(`Error building Docker image: ${stderr}`);
+      console.error(stderr);
       process.exit(1);
     }
     console.log(stdout);
 
-    exec(`docker run --rm -v ${__dirname}:/app -e FILE=${fileName} -e LANGUAGE=${language} ${dockerImage}`, (err, stdout, stderr) => {
+    // Run the container without the interactive option
+    exec(`docker run --rm -v ${__dirname}:/app -e FILE=${fileName.replace('.java', '.class')} -e LANGUAGE=${language} ${dockerImage}`, (err, stdout, stderr) => {
       if (err) {
         console.error(`Error running Docker container: ${stderr}`);
+        console.error(stderr);
         process.exit(1);
       }
       console.log(stdout);
