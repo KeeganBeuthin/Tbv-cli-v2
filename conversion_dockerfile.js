@@ -26,36 +26,66 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install py2wasm
 RUN pip install py2wasm
 
-# Copy the application code
-COPY . .
+# Copy only the specified file
+COPY ${fileName} /app/${fileName}
 
 # Set the command to run py2wasm on the Python file and save the output in /app/output.wasm
 ENTRYPOINT ["/bin/bash", "-c"]
 CMD ["py2wasm ${fileName} -o /app/output.wasm || tail -f /dev/null"]
 `;
 }
-function generateJavaDockerfile() {
-    return `
-  # Use the latest Ubuntu image as the base
-  FROM ubuntu:latest
+
+function generateGoDockerfile(fileName) {
+  return `
+# Use the latest Ubuntu image as the base
+FROM ubuntu:latest
+
+# Install Go and necessary tools
+RUN apt-get update && \\
+    apt-get install -y wget tar && \\
+    wget https://dl.google.com/go/go1.22.4.linux-amd64.tar.gz -O go.tar.gz && \\
+    tar -xzf go.tar.gz -C /usr/local && \\
+    rm go.tar.gz
+
+# Set environment variables for Go
+ENV GOROOT=/usr/local/go
+ENV GOPATH=/root/go
+ENV PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin
+
+# Set the working directory
+WORKDIR /app
+
+# Copy only the specified file
+COPY ${fileName} /app/${fileName}
+
+# Compile Go source file to WebAssembly
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm ${fileName} && cp /usr/local/go/misc/wasm/wasm_exec.js /app/ || tail -f /dev/null"]
+`;
+}
+
+// function generateJavaDockerfile() {
+//     return `
+//   # Use the latest Ubuntu image as the base
+//   FROM ubuntu:latest
   
-  # Install Java and necessary tools
-  RUN apt-get update && \\
-      apt-get install -y openjdk-11-jdk maven wget && \\
-      wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-compiler/0.4/jwebassembly-compiler-0.4.jar -O /usr/local/jwebassembly-compiler-0.4.jar && \\
-      wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-api/0.4/jwebassembly-api-0.4.jar -O /usr/local/jwebassembly-api-0.4.jar
+//   # Install Java and necessary tools
+//   RUN apt-get update && \\
+//       apt-get install -y openjdk-11-jdk maven wget && \\
+//       wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-compiler/0.4/jwebassembly-compiler-0.4.jar -O /usr/local/jwebassembly-compiler-0.4.jar && \\
+//       wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-api/0.4/jwebassembly-api-0.4.jar -O /usr/local/jwebassembly-api-0.4.jar
   
-  # Set the working directory
-  WORKDIR /app
+//   # Set the working directory
+//   WORKDIR /app
   
-  # Copy the application code
-  COPY . .
+//   # Copy the application code
+//   COPY . .
   
-  # Set the command to compile Java with Maven and convert to WebAssembly
-  ENTRYPOINT ["/bin/bash", "-c"]
-  CMD ["cd /app && mvn clean package && java -cp /usr/local/jwebassembly-compiler-0.4.jar:/app/target/simple-maven-project-1.0-SNAPSHOT.jar de.inetsoftware.jwebassembly.JWebAssembly target/classes/\${FILE} -o /app/output.wasm || tail -f /dev/null"]
-  `;
-  }
+//   # Set the command to compile Java with Maven and convert to WebAssembly
+//   ENTRYPOINT ["/bin/bash", "-c"]
+//   CMD ["cd /app && mvn clean package && java -cp /usr/local/jwebassembly-compiler-0.4.jar:/app/target/simple-maven-project-1.0-SNAPSHOT.jar de.inetsoftware.jwebassembly.JWebAssembly target/classes/\${FILE} -o /app/output.wasm || tail -f /dev/null"]
+//   `;
+//   }
 
 function generateDockerfile(language, filePath) {
   const fileName = path.basename(filePath);
@@ -65,8 +95,10 @@ function generateDockerfile(language, filePath) {
     dockerfileContent = generatePythonDockerfile(fileName);
   } else if (language === 'java') {
     dockerfileContent = generateJavaDockerfile();
+  } else if (language === 'go') {
+    dockerfileContent = generateGoDockerfile(fileName);
   } else {
-    console.error('Unsupported language. Please use "python" or "java".');
+    console.error('Unsupported language. Please use "python", "java", or "go".');
     process.exit(1);
   }
 
@@ -83,7 +115,7 @@ function generateDockerfile(language, filePath) {
     console.log(stdout);
 
     // Run the container without the interactive option
-    exec(`docker run --rm -v ${__dirname}:/app -e FILE=${fileName.replace('.java', '.class')} -e LANGUAGE=${language} ${dockerImage}`, (err, stdout, stderr) => {
+    exec(`docker run --rm -v ${__dirname}:/app ${dockerImage}`, (err, stdout, stderr) => {
       if (err) {
         console.error(`Error running Docker container: ${stderr}`);
         console.error(stderr);
