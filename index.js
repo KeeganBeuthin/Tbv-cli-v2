@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+//index.js
 const { Command } = require("commander");
 const path = require("path");
 const fs = require("fs");

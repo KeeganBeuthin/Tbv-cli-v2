@@ -1,20 +1,15 @@
 
-FROM ubuntu:latest
+FROM node:latest
 
-RUN apt-get update && \
-    apt-get install -y wget tar && \
-    wget https://dl.google.com/go/go1.22.4.linux-amd64.tar.gz -O go.tar.gz && \
-    tar -xzf go.tar.gz -C /usr/local && \
-    rm go.tar.gz
+# Install AssemblyScript compiler
+RUN npm install -g assemblyscript
 
-ENV GOROOT=/usr/local/go
-ENV GOPATH=/root/go
-ENV PATH=$PATH:$GOROOT/bin:$GOPATH/bin
-
+# Set working directory
 WORKDIR /app
 
-COPY main.go /app/main.go
+# Copy the TypeScript file into the Docker container
+COPY main.ts /app/main.ts
 
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm main.go"]
+# Change CMD to run AssemblyScript compiler manually and keep the container running
+CMD npx asc main.ts -o output.wasm && ls -l /app || bash
   

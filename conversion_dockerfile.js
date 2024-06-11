@@ -1,3 +1,4 @@
+//conversion_dockerfile.js
 const { Command } = require("commander");
 const path = require("path");
 const fs = require("fs");
@@ -27,6 +28,27 @@ COPY ${fileName} /app/${fileName}
 CMD ["py2wasm", "${fileName}", "-o", "/app/output.wasm"]
   `;
 }
+
+function generateAssemblyScriptDockerfile(filePath) {
+  const fileName = path.basename(filePath);
+
+  return `
+FROM node:latest
+
+# Install AssemblyScript compiler
+RUN npm install -g assemblyscript
+
+# Set working directory
+WORKDIR /app
+
+# Copy the TypeScript file into the Docker container
+COPY ${fileName} /app/${fileName}
+
+# Change CMD to run AssemblyScript compiler manually and keep the container running
+CMD npx asc ${fileName} -o output.wasm && ls -l /app || bash
+  `;
+}
+
 
 function generateGoDockerfile(filePath) {
   const fileName = path.basename(filePath);
@@ -86,9 +108,11 @@ function generateDockerfile(language, filePath) {
     // dockerfileContent = generateJavaDockerfile(filePath);
   } else if (language === "go") {
     dockerfileContent = generateGoDockerfile(filePath);
+  } else if (language === "assemblyscript") {
+    dockerfileContent = generateAssemblyScriptDockerfile(filePath);
   } else {
     console.error(
-      'Unsupported language. Please use "python", "java", or "go".'
+      'Unsupported language. Please use "python" , "assemblyscript" , "java", or "go".'
     );
     process.exit(1);
   }
