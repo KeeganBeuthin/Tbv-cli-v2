@@ -118,19 +118,21 @@ CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm ${fileName} && cp /usr/lo
 
 function generateDockerfile(language, inputPath) {
   let dockerfileContent;
+  const fileDirectory = path.dirname(inputPath); // Directory containing the file
+  const fileName = path.basename(inputPath); // File name
 
   switch(language) {
     case "python":
-      dockerfileContent = generatePythonDockerfile(inputPath);
+      dockerfileContent = generatePythonDockerfile(fileName);
       break;
     case "java":
       // dockerfileContent = generateJavaDockerfile(inputPath);
       break;
     case "go":
-      dockerfileContent = generateGoDockerfile(inputPath);
+      dockerfileContent = generateGoDockerfile(fileName);
       break;
     case "assemblyscript":
-      dockerfileContent = generateAssemblyScriptDockerfile(inputPath);
+      dockerfileContent = generateAssemblyScriptDockerfile(fileName);
       break;
     case "rust":
       dockerfileContent = generateRustDockerfile(inputPath);  // Handle entire directory for Rust
@@ -142,11 +144,10 @@ function generateDockerfile(language, inputPath) {
       process.exit(1);
   }
 
-  const dockerfilePath = path.join(__dirname, "Dockerfile");
+  const dockerfilePath = path.join(fileDirectory, "Dockerfile");
   fs.writeFileSync(dockerfilePath, dockerfileContent);
 
   const dockerImage = `${language.toLowerCase()}2wasm-image`;
-  const fileDirectory = path.resolve(inputPath); // Handle both files and directories
 
   exec(
     `docker build -f ${dockerfilePath} -t ${dockerImage} ${fileDirectory}`,
