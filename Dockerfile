@@ -1,15 +1,15 @@
 
-FROM node:latest
+FROM rust:latest
 
-# Install AssemblyScript compiler
-RUN npm install -g assemblyscript
+# Install wasm-pack for Rust -> WebAssembly compilation
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-# Set working directory
+# Set working directory to /app
 WORKDIR /app
 
-# Copy the TypeScript file into the Docker container
-COPY main.ts /app/main.ts
+# Copy the entire Rust project directory into the Docker container
+COPY . /app
 
-# Change CMD to run AssemblyScript compiler manually and keep the container running
-CMD npx asc main.ts -o output.wasm && ls -l /app || bash
+# Build the project with wasm-pack, targeting the 'web' environment
+CMD wasm-pack build --target web && cp ./pkg/*_bg.wasm /app/output.wasm || bash
   

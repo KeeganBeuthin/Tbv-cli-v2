@@ -4,7 +4,9 @@ const { Command } = require("commander");
 const path = require("path");
 const fs = require("fs");
 const { generateDockerfile } = require("./conversion_dockerfile");
-const { testWasmFunctions } = require("./testWasm");
+const { spawn } = require("child_process");
+const { executeWasmFile } = require("./executeWasm");
+
 
 const program = new Command();
 
@@ -25,18 +27,27 @@ program
     generateDockerfile(language, filePath);
   });
 
-program
-  .command("test <wasmFile>")
-  .description("Test a wasm file for required exported functions")
-  .action((wasmFile) => {
+  program
+  .command("execute <wasmFile>")
+  .description("Execute and test a specific wasm file")
+  .action(async (wasmFile) => {
     const filePath = path.resolve(wasmFile);
     if (!fs.existsSync(filePath)) {
       console.error(`WASM file ${filePath} does not exist.`);
       process.exit(1);
     }
-    testWasmFunctions(filePath);
+
+    console.log(`Executing WASM file: ${filePath}`);
+    const executionResult = await executeWasmFile(filePath);
+    if (executionResult.success) {
+      console.log(`Testing WASM file: ${filePath}`);
+      process.env.WASM_FILE = filePath; // Set the WASM file path for testing
+      runTests(); // Function to run Jest tests
+    } else {
+      console.error('Failed to execute WASM file.');
+    }
   });
 
 program.parse(process.argv);
 
-module.exports = { generateDockerfile, testWasmFunctions };
+module.exports = { generateDockerfile, executeWasmFile};

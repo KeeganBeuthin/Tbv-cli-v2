@@ -49,6 +49,24 @@ CMD npx asc ${fileName} -o output.wasm && ls -l /app || bash
   `;
 }
 
+function generateRustDockerfile(directoryPath) {
+  // Dockerfile specifically set up for Rust projects
+  return `
+FROM rust:latest
+
+# Install wasm-pack for Rust -> WebAssembly compilation
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+# Set working directory to /app
+WORKDIR /app
+
+# Copy the entire Rust project directory into the Docker container
+COPY . /app
+
+# Build the project with wasm-pack, targeting the 'web' environment
+CMD wasm-pack build --target web && cp ./pkg/*_bg.wasm /app/output.wasm || bash
+  `;
+}
 
 function generateGoDockerfile(filePath) {
   const fileName = path.basename(filePath);
@@ -98,30 +116,37 @@ CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm ${fileName} && cp /usr/lo
 //   `;
 //   }
 
-function generateDockerfile(language, filePath) {
-  const fileName = path.basename(filePath);
+function generateDockerfile(language, inputPath) {
   let dockerfileContent;
 
-  if (language === "python") {
-    dockerfileContent = generatePythonDockerfile(filePath);
-  } else if (language === "java") {
-    // dockerfileContent = generateJavaDockerfile(filePath);
-  } else if (language === "go") {
-    dockerfileContent = generateGoDockerfile(filePath);
-  } else if (language === "assemblyscript") {
-    dockerfileContent = generateAssemblyScriptDockerfile(filePath);
-  } else {
-    console.error(
-      'Unsupported language. Please use "python" , "assemblyscript" , "java", or "go".'
-    );
-    process.exit(1);
+  switch(language) {
+    case "python":
+      dockerfileContent = generatePythonDockerfile(inputPath);
+      break;
+    case "java":
+      // dockerfileContent = generateJavaDockerfile(inputPath);
+      break;
+    case "go":
+      dockerfileContent = generateGoDockerfile(inputPath);
+      break;
+    case "assemblyscript":
+      dockerfileContent = generateAssemblyScriptDockerfile(inputPath);
+      break;
+    case "rust":
+      dockerfileContent = generateRustDockerfile(inputPath);  // Handle entire directory for Rust
+      break;
+    default:
+      console.error(
+        'Unsupported language. Please use "python", "assemblyscript", "java", "go", or "rust".'
+      );
+      process.exit(1);
   }
 
   const dockerfilePath = path.join(__dirname, "Dockerfile");
   fs.writeFileSync(dockerfilePath, dockerfileContent);
 
   const dockerImage = `${language.toLowerCase()}2wasm-image`;
-  const fileDirectory = path.dirname(filePath);
+  const fileDirectory = path.resolve(inputPath); // Handle both files and directories
 
   exec(
     `docker build -f ${dockerfilePath} -t ${dockerImage} ${fileDirectory}`,
@@ -141,7 +166,7 @@ function generateDockerfile(language, filePath) {
           }
           console.log(stdout);
 
-          const wasmFilePath = path.join(__dirname, "output.wasm");
+          const wasmFilePath = path.join(fileDirectory, "output.wasm");
           if (fs.existsSync(wasmFilePath)) {
             console.log(
               `Conversion successful! The output.wasm file is located at ${wasmFilePath}`
