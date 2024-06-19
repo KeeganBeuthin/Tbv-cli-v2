@@ -1,20 +1,15 @@
 
-FROM ubuntu:latest
+FROM rust:latest
 
-RUN apt-get update && \
-    apt-get install -y wget tar && \
-    wget https://dl.google.com/go/go1.22.4.linux-amd64.tar.gz -O go.tar.gz && \
-    tar -xzf go.tar.gz -C /usr/local && \
-    rm go.tar.gz
+# Install wasm-pack for Rust -> WebAssembly compilation
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-ENV GOROOT=/usr/local/go
-ENV GOPATH=/root/go
-ENV PATH=$PATH:$GOROOT/bin:$GOPATH/bin
-
+# Set working directory to /app
 WORKDIR /app
 
-COPY main.go /app/main.go
+# Copy the entire Rust project directory into the Docker container
+COPY . /app
 
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm main.go && cp /usr/local/go/misc/wasm/wasm_exec.js /app/ || tail -f /dev/null"]
+# Build the project with wasm-pack, targeting the 'web' environment
+CMD wasm-pack build --target web && cp ./pkg/*_bg.wasm /app/output.wasm || bash
   
