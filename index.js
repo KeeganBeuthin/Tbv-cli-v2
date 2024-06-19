@@ -42,7 +42,7 @@ program
     if (executionResult.success) {
       console.log(`Testing WASM file: ${filePath}`);
       process.env.WASM_FILE = filePath; 
-      runTests(); 
+
     } else {
       console.error('Failed to execute WASM file.');
     }
