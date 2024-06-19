@@ -28,7 +28,7 @@ program
   });
 
   program
-  .command("execute <wasmFile>")
+  .command("test <wasmFile>")
   .description("Execute and test a specific wasm file")
   .action(async (wasmFile) => {
     const filePath = path.resolve(wasmFile);
@@ -41,8 +41,8 @@ program
     const executionResult = await executeWasmFile(filePath);
     if (executionResult.success) {
       console.log(`Testing WASM file: ${filePath}`);
-      process.env.WASM_FILE = filePath; // Set the WASM file path for testing
-      runTests(); // Function to run Jest tests
+      process.env.WASM_FILE = filePath; 
+      runTests(); 
     } else {
       console.error('Failed to execute WASM file.');
     }
