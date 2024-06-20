@@ -1,15 +1,10 @@
 
-FROM rust:latest
+FROM tinygo/tinygo:latest
 
-# Install wasm-pack for Rust -> WebAssembly compilation
-RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-# Set working directory to /app
 WORKDIR /app
 
-# Copy the entire Rust project directory into the Docker container
-COPY . /app
+COPY main.go /app/main.go
 
-# Build the project with wasm-pack, targeting the 'web' environment
-CMD wasm-pack build --target web && cp ./pkg/*_bg.wasm /app/output.wasm || bash
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["tinygo build -o /app/output.wasm -target=wasm main.go || tail -f /dev/null"]
   

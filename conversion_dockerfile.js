@@ -72,24 +72,14 @@ function generateGoDockerfile(filePath) {
   const fileName = path.basename(filePath);
 
   return `
-FROM ubuntu:latest
-
-RUN apt-get update && \\
-    apt-get install -y wget tar && \\
-    wget https://dl.google.com/go/go1.22.4.linux-amd64.tar.gz -O go.tar.gz && \\
-    tar -xzf go.tar.gz -C /usr/local && \\
-    rm go.tar.gz
-
-ENV GOROOT=/usr/local/go
-ENV GOPATH=/root/go
-ENV PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin
+FROM tinygo/tinygo:latest
 
 WORKDIR /app
 
 COPY ${fileName} /app/${fileName}
 
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["GOOS=js GOARCH=wasm go build -o /app/output.wasm ${fileName} && cp /usr/local/go/misc/wasm/wasm_exec.js /app/ || tail -f /dev/null"]
+CMD ["tinygo build -o /app/output.wasm -target=wasm ${fileName} || tail -f /dev/null"]
   `;
 }
 
