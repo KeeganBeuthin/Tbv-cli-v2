@@ -4,32 +4,37 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"syscall/js"
 )
 
 //export executeCreditLeg
-func executeCreditLeg(amount float64) {
+func executeCreditLeg(amount float64) float64 {
 	fmt.Printf("Credit Leg Executed: Amount Credited $%.2f\n", amount)
+	return amount
 }
 
 //export executeDebitLeg
-func executeDebitLeg(amount float64) {
+func executeDebitLeg(amount float64) float64 {
 	fmt.Printf("Debit Leg Executed: Amount Debited $%.2f\n", amount)
+	return amount
 }
 
 //export httpRequest
-func httpRequest(url string) {
+func httpRequest(url string) js.Value {
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("HTTP Request Failed:", err)
-		return
+		return js.Undefined()
 	}
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Failed to read response body:", err)
-		return
+		return js.Undefined()
 	}
-	fmt.Println("HTTP Request Output:", string(body))
+
+	return js.ValueOf(string(body))
 }
 
 func main() {

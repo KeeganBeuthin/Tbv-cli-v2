@@ -6,6 +6,20 @@ async function executeWasmFile(filePath) {
   try {
     const wasmBuffer = await promisify(fs.readFile)(filePath);
     const importObject = {
+      gojs: {
+        'runtime.ticks': () => {},
+        'runtime.sleepTicks': () => {},
+        'syscall/js.valueGet': () => {},
+        'syscall/js.valuePrepareString': () => {},
+        'syscall/js.valueLoadString': () => {},
+        'syscall/js.finalizeRef': () => {},
+        'syscall/js.stringVal': () => {},
+        'syscall/js.valueSet': () => {},
+        'syscall/js.valueNew': () => {},
+        'syscall/js.valueLength': () => {},
+        'syscall/js.valueIndex': () => {},
+        'syscall/js.valueCall': () => {},
+      },
       wbg: {
         __wbg_new_abda76e883ba8a5f: () => {},
         __wbg_stack_658279fe44541cf6: () => {},
@@ -60,7 +74,8 @@ async function executeWasmFile(filePath) {
 
 
     const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
-    console.log(instance.exports.http_request());
+    console.log(instance.exports)
+    console.log(instance.exports.executeCreditLeg(6));
 
     // Test executeCreditLeg function
     // Test executeCreditLeg function
