@@ -64,7 +64,13 @@ WORKDIR /app
 COPY . /app
 
 # Build the project with wasm-pack, targeting the 'web' environment
-CMD wasm-pack build --target web && cp ./pkg/*_bg.wasm /app/output.wasm || bash
+RUN wasm-pack build --target web -v || (echo "Failed to build Rust project" && exit 1)
+
+# Check if the .wasm file exists
+RUN if [ ! -f "./pkg/*_bg.wasm" ]; then echo "Generated .wasm file not found" && exit 1; fi
+
+# Copy the generated .wasm file to the mounted volume
+CMD cp ./pkg/*_bg.wasm /output/output.wasm || (echo "Failed to copy .wasm file" && exit 1)
   `;
 }
 
@@ -138,9 +144,10 @@ function generateDockerfile(language, inputPath) {
   fs.writeFileSync(dockerfilePath, dockerfileContent);
 
   const dockerImage = `${language.toLowerCase()}2wasm-image`;
+  const buildContext = language === 'rust' ? inputPath : fileDirectory;
 
   exec(
-    `docker build -f ${dockerfilePath} -t ${dockerImage} ${fileDirectory}`,
+    `docker build -f ${dockerfilePath} -t ${dockerImage} ${buildContext}`,
     (err, stdout, stderr) => {
       if (err) {
         console.error(`Error building Docker image: ${stderr}`);
@@ -148,8 +155,9 @@ function generateDockerfile(language, inputPath) {
       }
       console.log(stdout);
 
+      const mountPath = language === 'rust' ? '/app' : fileDirectory;
       exec(
-        `docker run --rm -v ${fileDirectory}:/app ${dockerImage}`,
+        `docker run --rm -v ${mountPath}:/app ${dockerImage}`,
         (err, stdout, stderr) => {
           if (err) {
             console.error(`Error running Docker container: ${stderr}`);
