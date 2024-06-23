@@ -75,7 +75,7 @@ async function executeWasmFile(filePath) {
 
     const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
     console.log(instance.exports)
-    console.log(instance.exports.executeCreditLeg(6));
+    console.log(instance.exports.add(9,5));
 
     // Test executeCreditLeg function
     // Test executeCreditLeg function

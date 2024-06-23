@@ -50,7 +50,6 @@ CMD npx asc ${fileName} -o output.wasm && ls -l /app || bash
 }
 
 function generateRustDockerfile(directoryPath) {
-  // Dockerfile specifically set up for Rust projects
   return `
 FROM rust:latest
 
@@ -64,10 +63,8 @@ WORKDIR /app
 COPY . /app
 
 # Build the project with wasm-pack, targeting the 'web' environment
-RUN wasm-pack build --target web -v || (echo "Failed to build Rust project" && exit 1)
+RUN wasm-pack build --target web || (echo "Failed to build Rust project" && exit 1)
 
-# Check if the .wasm file exists
-RUN if [ ! -f "./pkg/*_bg.wasm" ]; then echo "Generated .wasm file not found" && exit 1; fi
 
 # Copy the generated .wasm file to the mounted volume
 CMD cp ./pkg/*_bg.wasm /output/output.wasm || (echo "Failed to copy .wasm file" && exit 1)
@@ -89,32 +86,9 @@ CMD ["tinygo build -o /app/output.wasm -target=wasm ${fileName} || tail -f /dev/
   `;
 }
 
-// function generateJavaDockerfile() {
-//     return `
-//   # Use the latest Ubuntu image as the base
-//   FROM ubuntu:latest
-
-//   # Install Java and necessary tools
-//   RUN apt-get update && \\
-//       apt-get install -y openjdk-11-jdk maven wget && \\
-//       wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-compiler/0.4/jwebassembly-compiler-0.4.jar -O /usr/local/jwebassembly-compiler-0.4.jar && \\
-//       wget https://repo1.maven.org/maven2/de/inetsoftware/jwebassembly-api/0.4/jwebassembly-api-0.4.jar -O /usr/local/jwebassembly-api-0.4.jar
-
-//   # Set the working directory
-//   WORKDIR /app
-
-//   # Copy the application code
-//   COPY . .
-
-//   # Set the command to compile Java with Maven and convert to WebAssembly
-//   ENTRYPOINT ["/bin/bash", "-c"]
-//   CMD ["cd /app && mvn clean package && java -cp /usr/local/jwebassembly-compiler-0.4.jar:/app/target/simple-maven-project-1.0-SNAPSHOT.jar de.inetsoftware.jwebassembly.JWebAssembly target/classes/\${FILE} -o /app/output.wasm || tail -f /dev/null"]
-//   `;
-//   }
-
 function generateDockerfile(language, inputPath) {
   let dockerfileContent;
-  const fileDirectory = path.dirname(inputPath); // Directory containing the file
+  const fileDirectory = language === 'rust' ? inputPath : path.dirname(inputPath); // Directory containing the file or project
   const fileName = path.basename(inputPath); // File name
 
   switch(language) {
@@ -131,7 +105,7 @@ function generateDockerfile(language, inputPath) {
       dockerfileContent = generateAssemblyScriptDockerfile(fileName);
       break;
     case "rust":
-      dockerfileContent = generateRustDockerfile(inputPath);  // Handle entire directory for Rust
+      dockerfileContent = generateRustDockerfile(fileDirectory);  // Pass the entire directory path for Rust
       break;
     default:
       console.error(
@@ -155,26 +129,47 @@ function generateDockerfile(language, inputPath) {
       }
       console.log(stdout);
 
-      const mountPath = language === 'rust' ? '/app' : fileDirectory;
-      exec(
-        `docker run --rm -v ${mountPath}:/app ${dockerImage}`,
-        (err, stdout, stderr) => {
-          if (err) {
-            console.error(`Error running Docker container: ${stderr}`);
-            process.exit(1);
-          }
-          console.log(stdout);
+      if (language === 'rust') {
+        exec(
+          `docker run --rm -v ${fileDirectory}:/output ${dockerImage}`,
+          (err, stdout, stderr) => {
+            if (err) {
+              console.error(`Error running Docker container: ${stderr}`);
+              process.exit(1);
+            }
+            console.log(stdout);
 
-          const wasmFilePath = path.join(fileDirectory, "output.wasm");
-          if (fs.existsSync(wasmFilePath)) {
-            console.log(
-              `Conversion successful! The output.wasm file is located at ${wasmFilePath}`
-            );
-          } else {
-            console.error("Failed to generate the output.wasm file.");
+            const wasmFilePath = path.join(fileDirectory, "output.wasm");
+            if (fs.existsSync(wasmFilePath)) {
+              console.log(
+                `Conversion successful! The output.wasm file is located at ${wasmFilePath}`
+              );
+            } else {
+              console.error("Failed to generate the output.wasm file.");
+            }
           }
-        }
-      );
+        );
+      } else {
+        exec(
+          `docker run --rm -v ${fileDirectory}:/app ${dockerImage}`,
+          (err, stdout, stderr) => {
+            if (err) {
+              console.error(`Error running Docker container: ${stderr}`);
+              process.exit(1);
+            }
+            console.log(stdout);
+
+            const wasmFilePath = path.join(fileDirectory, "output.wasm");
+            if (fs.existsSync(wasmFilePath)) {
+              console.log(
+                `Conversion successful! The output.wasm file is located at ${wasmFilePath}`
+              );
+            } else {
+              console.error("Failed to generate the output.wasm file.");
+            }
+          }
+        );
+      }
     }
   );
 }
