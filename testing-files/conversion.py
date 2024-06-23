@@ -1,3 +1,6 @@
+
+
+
 def execute_credit_leg(amount, account):
     print(f"Crediting {amount} to account {account}")
 
@@ -7,7 +10,6 @@ def execute_debit_leg(amount, account):
 def httpRequest(a, b):
     return a + b
 
-# Test the functions
 if __name__ == "__main__":
     execute_credit_leg(100, "account1")
     execute_debit_leg(50, "account2")

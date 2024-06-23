@@ -63,7 +63,7 @@ WORKDIR /app
 COPY . /app
 
 # Build the project with wasm-pack, targeting the 'web' environment
-RUN wasm-pack build --target web || (echo "Failed to build Rust project" && exit 1)
+RUN wasm-pack build --target nodejs || (echo "Failed to build Rust project" && exit 1)
 
 
 # Copy the generated .wasm file to the mounted volume
@@ -88,10 +88,11 @@ CMD ["tinygo build -o /app/output.wasm -target=wasm ${fileName} || tail -f /dev/
 
 function generateDockerfile(language, inputPath) {
   let dockerfileContent;
-  const fileDirectory = language === 'rust' ? inputPath : path.dirname(inputPath); // Directory containing the file or project
-  const fileName = path.basename(inputPath); // File name
+  const fileDirectory =
+    language === "rust" ? inputPath : path.dirname(inputPath);
+  const fileName = path.basename(inputPath);
 
-  switch(language) {
+  switch (language) {
     case "python":
       dockerfileContent = generatePythonDockerfile(fileName);
       break;
@@ -105,7 +106,7 @@ function generateDockerfile(language, inputPath) {
       dockerfileContent = generateAssemblyScriptDockerfile(fileName);
       break;
     case "rust":
-      dockerfileContent = generateRustDockerfile(fileDirectory);  // Pass the entire directory path for Rust
+      dockerfileContent = generateRustDockerfile(fileDirectory);
       break;
     default:
       console.error(
@@ -118,7 +119,7 @@ function generateDockerfile(language, inputPath) {
   fs.writeFileSync(dockerfilePath, dockerfileContent);
 
   const dockerImage = `${language.toLowerCase()}2wasm-image`;
-  const buildContext = language === 'rust' ? inputPath : fileDirectory;
+  const buildContext = language === "rust" ? inputPath : fileDirectory;
 
   exec(
     `docker build -f ${dockerfilePath} -t ${dockerImage} ${buildContext}`,
@@ -129,7 +130,7 @@ function generateDockerfile(language, inputPath) {
       }
       console.log(stdout);
 
-      if (language === 'rust') {
+      if (language === "rust") {
         exec(
           `docker run --rm -v ${fileDirectory}:/output ${dockerImage}`,
           (err, stdout, stderr) => {

@@ -24,7 +24,13 @@ async function executeWasmFile(filePath) {
         __wbg_new_abda76e883ba8a5f: () => {},
         __wbg_stack_658279fe44541cf6: () => {},
         __wbg_error_f851667af71bcfc6: () => {},
-        __wbindgen_object_drop_ref: () => {}
+        __wbindgen_object_drop_ref: () => {},
+      },
+      __wbindgen_placeholder__: {
+        __wbg_new_abda76e883ba8a5f: () => {},
+        __wbg_stack_658279fe44541cf6: () => {},
+        __wbg_error_f851667af71bcfc6: () => {},
+        __wbindgen_object_drop_ref: () => {},
       },
       wasi_snapshot_preview1: {
         args_get: () => {},
@@ -75,7 +81,7 @@ async function executeWasmFile(filePath) {
 
     const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
     console.log(instance.exports)
-    console.log(instance.exports.add(9,5));
+    console.log(instance.exports.http_request(9,4));
 
     // Test executeCreditLeg function
     // Test executeCreditLeg function
@@ -99,7 +105,7 @@ async function executeWasmFile(filePath) {
     // Test httpRequest function
     const httpRequest = instance.exports.http_request;
     if (typeof httpRequest === "function") {
-      const result = httpRequest("https://jsonplaceholder.typicode.com/posts/1");
+      const result = httpRequest(9,5);
       console.log(result);
     } else {
       console.log("httpRequest function not found.");
