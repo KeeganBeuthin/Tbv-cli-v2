@@ -7,20 +7,20 @@ import (
 	"syscall/js"
 )
 
-//export executeCreditLeg
-func executeCreditLeg(amount float64) float64 {
+//export execute_credit_leg
+func execute_credit_leg(amount float64) float64 {
 	fmt.Printf("Credit Leg Executed: Amount Credited $%.2f\n", amount)
 	return amount
 }
 
-//export executeDebitLeg
-func executeDebitLeg(amount float64) float64 {
+//export execute_debit_leg
+func execute_debit_leg(amount float64) float64 {
 	fmt.Printf("Debit Leg Executed: Amount Debited $%.2f\n", amount)
 	return amount
 }
 
-//export httpRequest
-func httpRequest(url string) js.Value {
+//export http_request
+func http_request(url string) js.Value {
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("HTTP Request Failed:", err)
@@ -39,11 +39,11 @@ func httpRequest(url string) js.Value {
 
 func main() {
 	// Simulate a credit operation
-	executeCreditLeg(100.0)
+	execute_credit_leg(100.0)
 
 	// Simulate a debit operation
-	executeDebitLeg(50.0)
+	execute_debit_leg(50.0)
 
 	// Perform an HTTP GET request
-	httpRequest("https://jsonplaceholder.typicode.com/posts/1")
+	http_request("https://jsonplaceholder.typicode.com/posts/1")
 }

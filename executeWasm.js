@@ -32,6 +32,19 @@ async function executeWasmFile(filePath) {
         __wbg_error_f851667af71bcfc6: () => {},
         __wbindgen_object_drop_ref: () => {},
       },
+      env: {
+        abort: () => { console.error("Abort called"); },
+        'console.log': (argPtr) => {
+          const memory = new Uint8Array(instance.exports.memory.buffer);
+          let str = '';
+          let i = argPtr;
+          while (memory[i] !== 0) {
+            str += String.fromCharCode(memory[i]);
+            i++;
+          }
+          console.log(str);
+        },
+      },
       wasi_snapshot_preview1: {
         args_get: () => {},
         args_sizes_get: () => {},
@@ -78,17 +91,38 @@ async function executeWasmFile(filePath) {
       },
     };
 
+    const { instance: wasmInstance } = await WebAssembly.instantiate(wasmBuffer, importObject);
+    instance = wasmInstance;
+    console.log(instance.exports);
 
-    const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
-    console.log(instance.exports)
-    console.log(instance.exports.http_request(9,4));
+    const memory = new Uint8Array(instance.exports.memory.buffer);
+
+    function writeStringToMemory(str, offset) {
+      for (let i = 0; i < str.length; i++) {
+        memory[offset + i] = str.charCodeAt(i);
+      }
+      memory[offset + str.length] = 0; // Null-terminate the string
+    }
+
+    // Test httpRequest function
+    const httpRequest = instance.exports.http_request;
+    if (typeof httpRequest === "function") {
+      const result = httpRequest(9, 4);
+      console.log(`httpRequest result: ${result}`);
+    } else {
+      console.log("httpRequest function not found.");
+    }
 
     // Test executeCreditLeg function
-    // Test executeCreditLeg function
-    const executeCreditLeg = instance.exports.execute_credit_leg
+    const executeCreditLeg = instance.exports.execute_credit_leg;
     if (typeof executeCreditLeg === "function") {
-      const result = executeCreditLeg();
-      console.log(result);
+      const amount = 100;
+      const account = "Account123";
+      const accountPtr = 935; // Assume this is a safe memory location
+      writeStringToMemory(account, accountPtr);
+
+      console.log("Calling executeCreditLeg...");
+      executeCreditLeg(amount, accountPtr);
     } else {
       console.log("executeCreditLeg function not found.");
     }
@@ -96,19 +130,15 @@ async function executeWasmFile(filePath) {
     // Test executeDebitLeg function
     const executeDebitLeg = instance.exports.execute_debit_leg;
     if (typeof executeDebitLeg === "function") {
-      const result = executeDebitLeg(50.0);
-      console.log(result);
+      const amount = 50;
+      const account = "Account456";
+      const accountPtr = 2048; // Assume this is a safe memory location
+      writeStringToMemory(account, accountPtr);
+
+      console.log("Calling executeDebitLeg...");
+      executeDebitLeg(amount, accountPtr);
     } else {
       console.log("executeDebitLeg function not found.");
-    }
-
-    // Test httpRequest function
-    const httpRequest = instance.exports.http_request;
-    if (typeof httpRequest === "function") {
-      const result = httpRequest(9,5);
-      console.log(result);
-    } else {
-      console.log("httpRequest function not found.");
     }
 
     return { success: true };
