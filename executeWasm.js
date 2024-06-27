@@ -34,16 +34,19 @@ async function executeWasmFile(filePath) {
       },
       env: {
         abort: () => { console.error("Abort called"); },
-        'console.log': (argPtr) => {
-          const memory = new Uint8Array(instance.exports.memory.buffer);
-          let str = '';
-          let i = argPtr;
-          while (memory[i] !== 0) {
-            str += String.fromCharCode(memory[i]);
-            i++;
-          }
-          console.log(str);
-        },
+'console.log': (strPtr) => {
+  const memory = new Uint16Array(instance.exports.memory.buffer);
+  console.log('Memory:', memory);
+  console.log('String Pointer:', strPtr);
+  let str = '';
+  let i = strPtr >> 1; // Divide by 2 to get the index in the Uint16Array
+  while (memory[i] !== 0) {
+    console.log('Character at index', i, ':', memory[i]);
+    str += String.fromCharCode(memory[i]);
+    i++;
+  }
+  console.log('Decoded string:', str);
+},
       },
       wasi_snapshot_preview1: {
         args_get: () => {},
