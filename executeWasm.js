@@ -1,4 +1,3 @@
-//executeWasm.js
 const fs = require("fs");
 const { promisify } = require("util");
 
@@ -34,19 +33,19 @@ async function executeWasmFile(filePath) {
       },
       env: {
         abort: () => { console.error("Abort called"); },
-'console.log': (strPtr) => {
-  const memory = new Uint16Array(instance.exports.memory.buffer);
-  console.log('Memory:', memory);
-  console.log('String Pointer:', strPtr);
-  let str = '';
-  let i = strPtr >> 1; // Divide by 2 to get the index in the Uint16Array
-  while (memory[i] !== 0) {
-    console.log('Character at index', i, ':', memory[i]);
-    str += String.fromCharCode(memory[i]);
-    i++;
-  }
-  console.log('Decoded string:', str);
-},
+        'console.log': (strPtr) => {
+          const memory = new Uint16Array(instance.exports.memory.buffer);
+          console.log('Memory:', memory);
+          console.log('String Pointer:', strPtr);
+          let str = '';
+          let i = strPtr >> 1; // Divide by 2 to get the index in the Uint16Array
+          while (memory[i] !== 0) {
+            console.log('Character at index', i, ':', memory[i]);
+            str += String.fromCharCode(memory[i]);
+            i++;
+          }
+          console.log('Decoded string:', str);
+        },
       },
       wasi_snapshot_preview1: {
         args_get: () => {},
@@ -94,8 +93,97 @@ async function executeWasmFile(filePath) {
       },
     };
 
-    const { instance: wasmInstance } = await WebAssembly.instantiate(wasmBuffer, importObject);
-    instance = wasmInstance;
+    const goImportObject = {
+      gojs: {
+        'runtime.ticks': () => {},
+        'runtime.sleepTicks': () => {},
+        'syscall/js.valueGet': () => {},
+        'syscall/js.valuePrepareString': () => {},
+        'syscall/js.valueLoadString': () => {},
+        'syscall/js.finalizeRef': () => {},
+        'syscall/js.stringVal': () => {},
+        'syscall/js.valueSet': () => {},
+        'syscall/js.valueNew': () => {},
+        'syscall/js.valueLength': () => {},
+        'syscall/js.valueIndex': () => {},
+        'syscall/js.valueCall': () => {},
+      },
+      wbg: {
+        __wbg_new_abda76e883ba8a5f: () => {},
+        __wbg_stack_658279fe44541cf6: () => {},
+        __wbg_error_f851667af71bcfc6: () => {},
+        __wbindgen_object_drop_ref: () => {},
+      },
+      __wbindgen_placeholder__: {
+        __wbg_new_abda76e883ba8a5f: () => {},
+        __wbg_stack_658279fe44541cf6: () => {},
+        __wbg_error_f851667af71bcfc6: () => {},
+        __wbindgen_object_drop_ref: () => {},
+      },
+      env: {
+        abort: () => { console.error("Abort called"); },
+        'console.log': (strPtr) => {
+          const memory = new Uint16Array(instance.exports.memory.buffer);
+          console.log('Memory:', memory);
+          console.log('String Pointer:', strPtr);
+          let str = '';
+          let i = strPtr >> 1; // Divide by 2 to get the index in the Uint16Array
+          while (memory[i] !== 0) {
+            console.log('Character at index', i, ':', memory[i]);
+            str += String.fromCharCode(memory[i]);
+            i++;
+          }
+          console.log('Decoded string:', str);
+        },
+      },
+      wasi_snapshot_preview1: {
+        args_get: () => {},
+        args_sizes_get: () => {},
+        environ_get: () => {},
+        environ_sizes_get: () => {},
+        clock_res_get: () => {},
+        clock_time_get: () => {},
+        fd_advise: () => {},
+        fd_close: () => {},
+        fd_datasync: () => {},
+        fd_fdstat_get: () => {},
+        fd_fdstat_set_flags: () => {},
+        fd_filestat_get: () => {},
+        fd_filestat_set_size: () => {},
+        fd_filestat_set_times: () => {},
+        fd_pread: () => {},
+        fd_prestat_get: () => {},
+        fd_prestat_dir_name: () => {},
+        fd_pwrite: () => {},
+        fd_read: () => {},
+        fd_readdir: () => {},
+        fd_seek: () => {},
+        fd_sync: () => {},
+        fd_tell: () => {},
+        fd_write: () => {},
+        path_create_directory: () => {},
+        path_filestat_get: () => {},
+        path_filestat_set_times: () => {},
+        path_link: () => {},
+        path_open: () => {},
+        path_readlink: () => {},
+        path_remove_directory: () => {},
+        path_rename: () => {},
+        path_symlink: () => {},
+        path_unlink_file: () => {},
+        poll_oneoff: () => {},
+        proc_exit: () => {},
+        sched_yield: () => {},
+        random_get: () => {},
+        sock_accept: () => {},
+        sock_recv: () => {},
+        sock_send: () => {},
+        sock_shutdown: () => {},
+      },
+    };
+
+    const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
+
     console.log(instance.exports);
 
     const memory = new Uint8Array(instance.exports.memory.buffer);
@@ -107,11 +195,25 @@ async function executeWasmFile(filePath) {
       memory[offset + str.length] = 0; // Null-terminate the string
     }
 
+    function readStringFromMemory(offset) {
+      let str = '';
+      let i = offset;
+      while (memory[i] !== 0) {
+        str += String.fromCharCode(memory[i]);
+        i++;
+      }
+      return str;
+    }
+
+    // Log memory contents before function calls
+    console.log('Memory before function calls:', memory);
+
     // Test httpRequest function
     const httpRequest = instance.exports.http_request;
     if (typeof httpRequest === "function") {
       const result = httpRequest(9, 4);
       console.log(`httpRequest result: ${result}`);
+      console.log('Memory after httpRequest:', memory);
     } else {
       console.log("httpRequest function not found.");
     }
@@ -126,6 +228,8 @@ async function executeWasmFile(filePath) {
 
       console.log("Calling executeCreditLeg...");
       executeCreditLeg(amount, accountPtr);
+      console.log('Memory after executeCreditLeg:', memory);
+      console.log('Account string after executeCreditLeg:', readStringFromMemory(accountPtr));
     } else {
       console.log("executeCreditLeg function not found.");
     }
@@ -140,6 +244,8 @@ async function executeWasmFile(filePath) {
 
       console.log("Calling executeDebitLeg...");
       executeDebitLeg(amount, accountPtr);
+      console.log('Memory after executeDebitLeg:', memory);
+      console.log('Account string after executeDebitLeg:', readStringFromMemory(accountPtr));
     } else {
       console.log("executeDebitLeg function not found.");
     }

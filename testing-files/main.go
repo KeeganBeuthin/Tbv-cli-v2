@@ -2,48 +2,46 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"syscall/js"
 )
 
 //export execute_credit_leg
-func execute_credit_leg(amount float64) float64 {
-	fmt.Printf("Credit Leg Executed: Amount Credited $%.2f\n", amount)
-	return amount
+func execute_credit_leg(amount float64, account float64) {
+	message := fmt.Sprintf("Crediting %.2f to account %.2f", amount, account)
+	js.Global().Get("console").Call("log", message)
 }
 
 //export execute_debit_leg
-func execute_debit_leg(amount float64) float64 {
-	fmt.Printf("Debit Leg Executed: Amount Debited $%.2f\n", amount)
-	return amount
+func execute_debit_leg(amount float64, account float64) {
+	message := fmt.Sprintf("Debiting %.2f from account %.2f", amount, account)
+	js.Global().Get("console").Call("log", message)
 }
 
 //export http_request
-func http_request(url string) js.Value {
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Println("HTTP Request Failed:", err)
-		return js.Undefined()
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Failed to read response body:", err)
-		return js.Undefined()
-	}
-
-	return js.ValueOf(string(body))
+func http_request(a float64, b float64) float64 {
+	return a + b
 }
 
 func main() {
-	// Simulate a credit operation
-	execute_credit_leg(100.0)
+	// Expose the functions to JavaScript
+	js.Global().Set("execute_credit_leg", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		amount := args[0].Float()
+		account := args[1].Float()
+		execute_credit_leg(amount, account)
+		return nil
+	}))
+	js.Global().Set("execute_debit_leg", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		amount := args[0].Float()
+		account := args[1].Float()
+		execute_debit_leg(amount, account)
+		return nil
+	}))
+	js.Global().Set("http_request", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		a := args[0].Float()
+		b := args[1].Float()
+		return http_request(a, b)
+	}))
 
-	// Simulate a debit operation
-	execute_debit_leg(50.0)
-
-	// Perform an HTTP GET request
-	http_request("https://jsonplaceholder.typicode.com/posts/1")
+	// Keep the program running
+	<-make(chan bool)
 }
