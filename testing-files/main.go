@@ -6,13 +6,13 @@ import (
 )
 
 //export execute_credit_leg
-func execute_credit_leg(amount float64, account float64) {
+func execute_credit_leg(amount int64, account int64) {
 	message := fmt.Sprintf("Crediting %.2f to account %.2f", amount, account)
 	js.Global().Get("console").Call("log", message)
 }
 
 //export execute_debit_leg
-func execute_debit_leg(amount float64, account float64) {
+func execute_debit_leg(amount int64, account int64) {
 	message := fmt.Sprintf("Debiting %.2f from account %.2f", amount, account)
 	js.Global().Get("console").Call("log", message)
 }
