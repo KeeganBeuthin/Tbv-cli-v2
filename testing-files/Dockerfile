@@ -11,5 +11,5 @@ WORKDIR /app
 COPY main.ts /app/main.ts
 
 # Change CMD to run AssemblyScript compiler manually and keep the container running
-CMD npx asc main.ts -o output.wasm && ls -l /app || bash
+CMD npx asc main.ts -o output.wasm --runtime minimal && ls -l /app || bash
   

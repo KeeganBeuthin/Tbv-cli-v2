@@ -45,7 +45,7 @@ WORKDIR /app
 COPY ${fileName} /app/${fileName}
 
 # Change CMD to run AssemblyScript compiler manually and keep the container running
-CMD npx asc ${fileName} -o output.wasm && ls -l /app || bash
+CMD npx asc ${fileName} -o output.wasm --runtime minimal && ls -l /app || bash
   `;
 }
 
