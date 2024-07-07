@@ -20,6 +20,9 @@ export function allocateString(len: i32): usize {
   return ptr;
 }
 
+export function AssemblyScript(): void {}
+
+
 export function writeString(ptr: usize, strPtr: usize, strLen: i32): void {
   consoleLog(`Entering writeString function with ptr: ${ptr}, strPtr: ${strPtr}, strLen: ${strLen}`);
   

@@ -1,4 +1,3 @@
-//executeWasm.js
 const fs = require("fs");
 const {promisify} = require("util");
 const { TextDecoder, TextEncoder } = require("util");
@@ -88,84 +87,13 @@ async function executeWasmFile(filePath) {
       },
     };
 
-    const goImportObject = {
-      gojs: {
-        'runtime.ticks': () => {},
-        'runtime.sleepTicks': () => {},
-        'syscall/js.valueGet': () => {},
-        'syscall/js.valuePrepareString': () => {},
-        'syscall/js.valueLoadString': () => {},
-        'syscall/js.finalizeRef': () => {},
-        'syscall/js.stringVal': () => {},
-        'syscall/js.valueSet': () => {},
-        'syscall/js.valueNew': () => {},
-        'syscall/js.valueLength': () => {},
-        'syscall/js.valueIndex': () => {},
-        'syscall/js.valueCall': () => {},
-      },
-      wbg: {
-        __wbg_new_abda76e883ba8a5f: () => {},
-        __wbg_stack_658279fe44541cf6: () => {},
-        __wbg_error_f851667af71bcfc6: () => {},
-        __wbindgen_object_drop_ref: () => {},
-      },
-      __wbindgen_placeholder__: {
-        __wbg_new_abda76e883ba8a5f: () => {},
-        __wbg_stack_658279fe44541cf6: () => {},
-        __wbg_error_f851667af71bcfc6: () => {},
-        __wbindgen_object_drop_ref: () => {},
-      },
-      wasi_snapshot_preview1: {
-        args_get: () => {},
-        args_sizes_get: () => {},
-        environ_get: () => {},
-        environ_sizes_get: () => {},
-        clock_res_get: () => {},
-        clock_time_get: () => {},
-        fd_advise: () => {},
-        fd_close: () => {},
-        fd_datasync: () => {},
-        fd_fdstat_get: () => {},
-        fd_fdstat_set_flags: () => {},
-        fd_filestat_get: () => {},
-        fd_filestat_set_size: () => {},
-        fd_filestat_set_times: () => {},
-        fd_pread: () => {},
-        fd_prestat_get: () => {},
-        fd_prestat_dir_name: () => {},
-        fd_pwrite: () => {},
-        fd_read: () => {},
-        fd_readdir: () => {},
-        fd_seek: () => {},
-        fd_sync: () => {},
-        fd_tell: () => {},
-        fd_write: () => {},
-        path_create_directory: () => {},
-        path_filestat_get: () => {},
-        path_filestat_set_times: () => {},
-        path_link: () => {},
-        path_open: () => {},
-        path_readlink: () => {},
-        path_remove_directory: () => {},
-        path_rename: () => {},
-        path_symlink: () => {},
-        path_unlink_file: () => {},
-        poll_oneoff: () => {},
-        proc_exit: () => {},
-        sched_yield: () => {},
-        random_get: () => {},
-        sock_accept: () => {},
-        sock_recv: () => {},
-        sock_send: () => {},
-        sock_shutdown: () => {},
-      },
-    };
-
     const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
     const { memory } = instance.exports;
     
     console.log(`Initial memory size: ${memory.buffer.byteLength} bytes`);
     
+    const isTinyGo = typeof instance.exports.TinyGo === 'function';
+
     function writeStringToMemory(str) {
       console.log(`JS: Writing string "${str}" to memory`);
       const encoder = new TextEncoder();
@@ -185,30 +113,72 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
-    const amount = "100.50";
-    const account = "12358";
+    function writeStringToMemoryTinyGo(str) {
+      console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
+      const encoder = new TextEncoder();
+      const encodedStr = encoder.encode(str);
+      const ptr = instance.exports.malloc(encodedStr.length);
+      new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
+      console.log(`JS: Allocated string at ${ptr}`);
+      return { ptr, length: encodedStr.length };
+    }
     
-    console.log('JS: Writing amount string to memory');
-    const amountPtr = writeStringToMemory(amount);
-    console.log('JS: Writing account string to memory');
-    const accountPtr = writeStringToMemory(account);
-    
-    console.log('JS: Calling execute_credit_leg');
-    const creditResultPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
-    console.log('JS: Reading credit result from memory');
-    const creditResult = readStringFromMemory(creditResultPtr);
-    console.log('Result of execute_credit_leg:', creditResult);
-    
-    console.log('JS: Calling execute_debit_leg');
-    const debitResultPtr = instance.exports.execute_debit_leg(amountPtr, accountPtr);
-    console.log('JS: Reading debit result from memory');
-    const debitResult = readStringFromMemory(debitResultPtr);
-    console.log('Result of execute_debit_leg:', debitResult);
+    function readStringFromMemoryTinyGo(ptr) {
+      console.log(`JS: Reading string from memory at ${ptr} (TinyGo)`);
+      const len = instance.exports.getStringLength(ptr);
+      const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      const str = new TextDecoder().decode(buffer);
+      console.log(`JS: Read string: "${str}"`);
+      return str;
+    }
 
-    return { success: true };
+    const amount = "745";
+    const account = "1234567";
+    
+    let amountPtr, accountPtr, creditResultPtr, debitResultPtr, creditResult, debitResult;
+
+    if (!isTinyGo) {
+      // AssemblyScript logic
+      console.log('JS: Writing amount string to memory');
+      amountPtr = writeStringToMemory(amount);
+      console.log('JS: Writing account string to memory');
+      accountPtr = writeStringToMemory(account);
+      
+      console.log('JS: Calling execute_credit_leg');
+      creditResultPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
+      console.log('JS: Reading credit result from memory');
+      creditResult = readStringFromMemory(creditResultPtr);
+      console.log('Result of execute_credit_leg:', creditResult);
+      
+      console.log('JS: Calling execute_debit_leg');
+      debitResultPtr = instance.exports.execute_debit_leg(amountPtr, accountPtr);
+      console.log('JS: Reading debit result from memory');
+      debitResult = readStringFromMemory(debitResultPtr);
+      console.log('Result of execute_debit_leg:', debitResult);
+    } else {
+      // TinyGo logic
+      console.log('JS: Writing amount string to memory (TinyGo)');
+      const amountMem = writeStringToMemoryTinyGo(amount);
+      console.log('JS: Writing account string to memory (TinyGo)');
+      const accountMem = writeStringToMemoryTinyGo(account);
+      
+      console.log('JS: Calling execute_credit_leg (TinyGo)');
+      creditResultPtr = instance.exports.execute_credit_leg(amountMem.ptr, amountMem.length, accountMem.ptr, accountMem.length);
+      console.log('JS: Reading credit result from memory (TinyGo)');
+      creditResult = readStringFromMemoryTinyGo(creditResultPtr);
+      console.log('Result of execute_credit_leg:', creditResult);
+      
+      console.log('JS: Calling execute_debit_leg (TinyGo)');
+      debitResultPtr = instance.exports.execute_debit_leg(amountMem.ptr, amountMem.length, accountMem.ptr, accountMem.length);
+      console.log('JS: Reading debit result from memory (TinyGo)');
+      debitResult = readStringFromMemoryTinyGo(debitResultPtr);
+      console.log('Result of execute_debit_leg:', debitResult);
+    }
+
+    return { success: true, creditResult, debitResult };
   } catch (error) {
     console.error("Error executing WASM file:", error);
-    return { success: false };
+    return { success: false, error: error.message };
   }
 }
 

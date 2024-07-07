@@ -2,46 +2,37 @@ package main
 
 import (
 	"fmt"
-	"syscall/js"
+	"unsafe"
 )
 
+//export TinyGo
+func TinyGo() {}
+
 //export execute_credit_leg
-func execute_credit_leg(amount int64, account int64) {
-	message := fmt.Sprintf("Crediting %.2f to account %.2f", amount, account)
-	js.Global().Get("console").Call("log", message)
+func execute_credit_leg(amountPtr *byte, amountLen int, accountPtr *byte, accountLen int) *byte {
+	amount := string(unsafe.Slice(amountPtr, amountLen))
+	account := string(unsafe.Slice(accountPtr, accountLen))
+	message := fmt.Sprintf("Crediting %s to account %s", amount, account)
+	return &([]byte(message)[0])
 }
 
 //export execute_debit_leg
-func execute_debit_leg(amount int64, account int64) {
-	message := fmt.Sprintf("Debiting %.2f from account %.2f", amount, account)
-	js.Global().Get("console").Call("log", message)
+func execute_debit_leg(amountPtr *byte, amountLen int, accountPtr *byte, accountLen int) *byte {
+	amount := string(unsafe.Slice(amountPtr, amountLen))
+	account := string(unsafe.Slice(accountPtr, accountLen))
+	message := fmt.Sprintf("Debiting %s from account %s", amount, account)
+	return &([]byte(message)[0])
 }
 
-//export http_request
-func http_request(a float64, b float64) float64 {
-	return a + b
+//export getStringLength
+func getStringLength(ptr *byte) int {
+	str := unsafe.Slice(ptr, 1<<30)
+	for i, b := range str {
+		if b == 0 {
+			return i
+		}
+	}
+	return 0
 }
 
-func main() {
-	// Expose the functions to JavaScript
-	js.Global().Set("execute_credit_leg", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		amount := args[0].Float()
-		account := args[1].Float()
-		execute_credit_leg(amount, account)
-		return nil
-	}))
-	js.Global().Set("execute_debit_leg", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		amount := args[0].Float()
-		account := args[1].Float()
-		execute_debit_leg(amount, account)
-		return nil
-	}))
-	js.Global().Set("http_request", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		a := args[0].Float()
-		b := args[1].Float()
-		return http_request(a, b)
-	}))
-
-	// Keep the program running
-	<-make(chan bool)
-}
+func main() {}
