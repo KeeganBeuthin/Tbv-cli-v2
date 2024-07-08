@@ -15,7 +15,7 @@ function consoleLog(message: string): void {
 
 export function allocateString(len: i32): usize {
   consoleLog(`Attempting to allocate string of length ${len}`);
-  const ptr = __new(len, idof<ArrayBuffer>()) + 4; // Add 4 to skip the header
+  const ptr = __new(len, idof<ArrayBuffer>()) + 4; 
   consoleLog(`Allocated buffer for string at ${ptr} with length ${len}`);
   return ptr;
 }
@@ -62,7 +62,7 @@ export function readString(ptr: usize, len: i32): usize {
   const str = String.UTF8.decode(buffer);
   consoleLog(`Read string "${str}" from ${ptr} with length ${len}`);
   
-  // Allocate new memory for the string and return its pointer
+
   const newPtr = __new(len, idof<ArrayBuffer>());
   memory.copy(newPtr, ptr, len);
   return newPtr;

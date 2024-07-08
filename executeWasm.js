@@ -1,5 +1,5 @@
 const fs = require("fs");
-const {promisify} = require("util");
+const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 
 async function executeWasmFile(filePath) {
@@ -8,26 +8,30 @@ async function executeWasmFile(filePath) {
 
     const importObject = {
       env: {
-        abort: () => { console.error("Abort called"); },
+        abort: () => {
+          console.error("Abort called");
+        },
         logMessage: (ptr, len) => {
           const memory = new Uint8Array(instance.exports.memory.buffer);
-          const message = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
+          const message = new TextDecoder().decode(
+            memory.subarray(ptr, ptr + len)
+          );
           console.log("WASM:", message);
         },
       },
       gojs: {
-        'runtime.ticks': () => {},
-        'runtime.sleepTicks': () => {},
-        'syscall/js.valueGet': () => {},
-        'syscall/js.valuePrepareString': () => {},
-        'syscall/js.valueLoadString': () => {},
-        'syscall/js.finalizeRef': () => {},
-        'syscall/js.stringVal': () => {},
-        'syscall/js.valueSet': () => {},
-        'syscall/js.valueNew': () => {},
-        'syscall/js.valueLength': () => {},
-        'syscall/js.valueIndex': () => {},
-        'syscall/js.valueCall': () => {},
+        "runtime.ticks": () => {},
+        "runtime.sleepTicks": () => {},
+        "syscall/js.valueGet": () => {},
+        "syscall/js.valuePrepareString": () => {},
+        "syscall/js.valueLoadString": () => {},
+        "syscall/js.finalizeRef": () => {},
+        "syscall/js.stringVal": () => {},
+        "syscall/js.valueSet": () => {},
+        "syscall/js.valueNew": () => {},
+        "syscall/js.valueLength": () => {},
+        "syscall/js.valueIndex": () => {},
+        "syscall/js.valueCall": () => {},
       },
       wbg: {
         __wbg_new_abda76e883ba8a5f: () => {},
@@ -87,13 +91,16 @@ async function executeWasmFile(filePath) {
       },
     };
 
-    const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
+    const { instance } = await WebAssembly.instantiate(
+      wasmBuffer,
+      importObject
+    );
     const { memory } = instance.exports;
-    
+
     console.log(`Initial memory size: ${memory.buffer.byteLength} bytes`);
-    
-    const isTinyGo = typeof instance.exports.TinyGo === 'function';
-    const isRust = typeof instance.exports.alloc === 'function'; // Rust-specific check
+
+    const isTinyGo = typeof instance.exports.TinyGo === "function";
+    const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
     function writeStringToMemory(str) {
@@ -105,7 +112,7 @@ async function executeWasmFile(filePath) {
       console.log(`JS: Allocated string at ${ptr}`);
       return ptr;
     }
-    
+
     function readStringFromMemory(ptr) {
       console.log(`JS: Reading string from memory at ${ptr}`);
       const len = instance.exports.getStringLen(ptr);
@@ -124,7 +131,7 @@ async function executeWasmFile(filePath) {
       console.log(`JS: Allocated string at ${ptr}`);
       return { ptr, length: encodedStr.length };
     }
-    
+
     function readStringFromMemoryTinyGo(ptr) {
       console.log(`JS: Reading string from memory at ${ptr} (TinyGo)`);
       const len = instance.exports.getStringLength(ptr);
@@ -157,65 +164,95 @@ async function executeWasmFile(filePath) {
 
     const amount = "745";
     const account = "1234567";
-    
-    let amountPtr, accountPtr, creditResultPtr, debitResultPtr, creditResult, debitResult;
+
+    let amountPtr,
+      accountPtr,
+      creditResultPtr,
+      debitResultPtr,
+      creditResult,
+      debitResult;
 
     if (isAssemblyScript) {
       // AssemblyScript logic
-      console.log('JS: Writing amount string to memory');
+      console.log("JS: Writing amount string to memory");
       amountPtr = writeStringToMemory(amount);
-      console.log('JS: Writing account string to memory');
+      console.log("JS: Writing account string to memory");
       accountPtr = writeStringToMemory(account);
-      
-      console.log('JS: Calling execute_credit_leg');
-      creditResultPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
-      console.log('JS: Reading credit result from memory');
+
+      console.log("JS: Calling execute_credit_leg");
+      creditResultPtr = instance.exports.execute_credit_leg(
+        amountPtr,
+        accountPtr
+      );
+      console.log("JS: Reading credit result from memory");
       creditResult = readStringFromMemory(creditResultPtr);
-      console.log('Result of execute_credit_leg:', creditResult);
-      
-      console.log('JS: Calling execute_debit_leg');
-      debitResultPtr = instance.exports.execute_debit_leg(amountPtr, accountPtr);
-      console.log('JS: Reading debit result from memory');
+      console.log("Result of execute_credit_leg:", creditResult);
+
+      console.log("JS: Calling execute_debit_leg");
+      debitResultPtr = instance.exports.execute_debit_leg(
+        amountPtr,
+        accountPtr
+      );
+      console.log("JS: Reading debit result from memory");
       debitResult = readStringFromMemory(debitResultPtr);
-      console.log('Result of execute_debit_leg:', debitResult);
+      console.log("Result of execute_debit_leg:", debitResult);
     } else if (isTinyGo) {
       // TinyGo logic
-      console.log('JS: Writing amount string to memory (TinyGo)');
+      console.log("JS: Writing amount string to memory (TinyGo)");
       const amountMem = writeStringToMemoryTinyGo(amount);
-      console.log('JS: Writing account string to memory (TinyGo)');
+      console.log("JS: Writing account string to memory (TinyGo)");
       const accountMem = writeStringToMemoryTinyGo(account);
-      
-      console.log('JS: Calling execute_credit_leg (TinyGo)');
-      creditResultPtr = instance.exports.execute_credit_leg(amountMem.ptr, amountMem.length, accountMem.ptr, accountMem.length);
-      console.log('JS: Reading credit result from memory (TinyGo)');
+
+      console.log("JS: Calling execute_credit_leg (TinyGo)");
+      creditResultPtr = instance.exports.execute_credit_leg(
+        amountMem.ptr,
+        amountMem.length,
+        accountMem.ptr,
+        accountMem.length
+      );
+      console.log("JS: Reading credit result from memory (TinyGo)");
       creditResult = readStringFromMemoryTinyGo(creditResultPtr);
-      console.log('Result of execute_credit_leg:', creditResult);
-      
-      console.log('JS: Calling execute_debit_leg (TinyGo)');
-      debitResultPtr = instance.exports.execute_debit_leg(amountMem.ptr, amountMem.length, accountMem.ptr, accountMem.length);
-      console.log('JS: Reading debit result from memory (TinyGo)');
+      console.log("Result of execute_credit_leg:", creditResult);
+
+      console.log("JS: Calling execute_debit_leg (TinyGo)");
+      debitResultPtr = instance.exports.execute_debit_leg(
+        amountMem.ptr,
+        amountMem.length,
+        accountMem.ptr,
+        accountMem.length
+      );
+      console.log("JS: Reading debit result from memory (TinyGo)");
       debitResult = readStringFromMemoryTinyGo(debitResultPtr);
-      console.log('Result of execute_debit_leg:', debitResult);
+      console.log("Result of execute_debit_leg:", debitResult);
     } else if (isRust) {
       // Rust logic
-      console.log('JS: Writing amount string to memory (Rust)');
+      console.log("JS: Writing amount string to memory (Rust)");
       const amountMem = writeStringToMemoryRust(amount);
-      console.log('JS: Writing account string to memory (Rust)');
+      console.log("JS: Writing account string to memory (Rust)");
       const accountMem = writeStringToMemoryRust(account);
-      
-      console.log('JS: Calling execute_credit_leg (Rust)');
-      creditResultPtr = instance.exports.execute_credit_leg(amountMem.ptr, amountMem.len, accountMem.ptr, accountMem.len);
-      console.log('JS: Reading credit result from memory (Rust)');
-      creditResult = readStringFromMemoryRust(creditResultPtr);
-      console.log('Result of execute_credit_leg:', creditResult);
-      
-      console.log('JS: Calling execute_debit_leg (Rust)');
-      debitResultPtr = instance.exports.execute_debit_leg(amountMem.ptr, amountMem.len, accountMem.ptr, accountMem.len);
-      console.log('JS: Reading debit result from memory (Rust)');
-      debitResult = readStringFromMemoryRust(debitResultPtr);
-      console.log('Result of execute_debit_leg:', debitResult);
 
-      // Clean up (Rust-specific)
+      console.log("JS: Calling execute_credit_leg (Rust)");
+      creditResultPtr = instance.exports.execute_credit_leg(
+        amountMem.ptr,
+        amountMem.len,
+        accountMem.ptr,
+        accountMem.len
+      );
+      console.log("JS: Reading credit result from memory (Rust)");
+      creditResult = readStringFromMemoryRust(creditResultPtr);
+      console.log("Result of execute_credit_leg:", creditResult);
+
+      console.log("JS: Calling execute_debit_leg (Rust)");
+      debitResultPtr = instance.exports.execute_debit_leg(
+        amountMem.ptr,
+        amountMem.len,
+        accountMem.ptr,
+        accountMem.len
+      );
+      console.log("JS: Reading debit result from memory (Rust)");
+      debitResult = readStringFromMemoryRust(debitResultPtr);
+      console.log("Result of execute_debit_leg:", debitResult);
+
       instance.exports.dealloc(amountMem.ptr, amountMem.len);
       instance.exports.dealloc(accountMem.ptr, accountMem.len);
     }
@@ -229,15 +266,3 @@ async function executeWasmFile(filePath) {
 }
 
 module.exports = { executeWasmFile };
-
-
-
-
-
-
-
-
-
-
-
-

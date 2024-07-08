@@ -7,7 +7,6 @@ const { generateDockerfile } = require("./conversion_dockerfile");
 const { spawn } = require("child_process");
 const { executeWasmFile } = require("./executeWasm");
 
-
 const program = new Command();
 
 program
@@ -27,7 +26,7 @@ program
     generateDockerfile(language, filePath);
   });
 
-  program
+program
   .command("test <wasmFile>")
   .description("Execute and test a specific wasm file")
   .action(async (wasmFile) => {
@@ -41,13 +40,12 @@ program
     const executionResult = await executeWasmFile(filePath);
     if (executionResult.success) {
       console.log(`Testing WASM file: ${filePath}`);
-      process.env.WASM_FILE = filePath; 
-
+      process.env.WASM_FILE = filePath;
     } else {
-      console.error('Failed to execute WASM file.');
+      console.error("Failed to execute WASM file.");
     }
   });
 
 program.parse(process.argv);
 
-module.exports = { generateDockerfile, executeWasmFile};
+module.exports = { generateDockerfile, executeWasmFile };
