@@ -1,6 +1,8 @@
 const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
+const axios = require('axios');
+const { startServer } = require('./simpleApi');
 
 async function executeWasmFile(filePath) {
   try {
@@ -198,32 +200,51 @@ async function executeWasmFile(filePath) {
       console.log("Result of execute_debit_leg:", debitResult);
     } else if (isTinyGo) {
       // TinyGo logic
-      console.log("JS: Writing amount string to memory (TinyGo)");
-      const amountMem = writeStringToMemoryTinyGo(amount);
-      console.log("JS: Writing account string to memory (TinyGo)");
-      const accountMem = writeStringToMemoryTinyGo(account);
+      const server = await startServer();
+      try {
+        // Call the API to get the test data
+        const response = await axios.get('http://localhost:3000/test');
+        const testData = JSON.stringify(response.data);
+    
+        // Call the logList function
+        const encoder = new TextEncoder();
+        const encodedTestData = encoder.encode(testData);
+        const ptr = writeStringToMemoryTinyGo(testData);
+        instance.exports.logList(ptr, encodedTestData.length);
+    
+        // Process each item from the API response
+        for (const item of response.data) {
+          const { amount, account } = item;
+          console.log(`Processing item: Amount ${amount}, Account ${account}`);
+    
+          const amountPtr = writeStringToMemoryTinyGo(amount);
+          const accountPtr = writeStringToMemoryTinyGo(account);
+    
+          const creditResultPtr = instance.exports.execute_credit_leg(
+            amountPtr,
+            amount.length,
+            accountPtr,
+            account.length
+          );
+          const creditResult = readStringFromMemoryTinyGo(creditResultPtr);
+          console.log("Credit Result:", creditResult);
+    
+          const debitResultPtr = instance.exports.execute_debit_leg(
+            amountPtr,
+            amount.length,
+            accountPtr,
+            account.length
+          );
+          const debitResult = readStringFromMemoryTinyGo(debitResultPtr);
+          console.log("Debit Result:", debitResult);
+        }
+      } finally {
+        // Close the server
+        server.close(() => {
+          console.log('API server closed');
+        });
+      }
 
-      console.log("JS: Calling execute_credit_leg (TinyGo)");
-      creditResultPtr = instance.exports.execute_credit_leg(
-        amountMem.ptr,
-        amountMem.length,
-        accountMem.ptr,
-        accountMem.length
-      );
-      console.log("JS: Reading credit result from memory (TinyGo)");
-      creditResult = readStringFromMemoryTinyGo(creditResultPtr);
-      console.log("Result of execute_credit_leg:", creditResult);
-
-      console.log("JS: Calling execute_debit_leg (TinyGo)");
-      debitResultPtr = instance.exports.execute_debit_leg(
-        amountMem.ptr,
-        amountMem.length,
-        accountMem.ptr,
-        accountMem.length
-      );
-      console.log("JS: Reading debit result from memory (TinyGo)");
-      debitResult = readStringFromMemoryTinyGo(debitResultPtr);
-      console.log("Result of execute_debit_leg:", debitResult);
     } else if (isRust) {
       // Rust logic
       console.log("JS: Writing amount string to memory (Rust)");

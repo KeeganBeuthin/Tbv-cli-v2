@@ -35,4 +35,10 @@ func getStringLength(ptr *byte) int {
 	return 0
 }
 
+//export logList
+func logList(listPtr *byte, listLen int) {
+	list := string(unsafe.Slice(listPtr, listLen))
+	fmt.Printf("Received test list: %s\n", list)
+}
+
 func main() {}
