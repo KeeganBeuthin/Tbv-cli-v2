@@ -93,6 +93,8 @@ async function executeWasmFile(filePath) {
     console.log(`Initial memory size: ${memory.buffer.byteLength} bytes`);
     
     const isTinyGo = typeof instance.exports.TinyGo === 'function';
+    const isRust = typeof instance.exports.alloc === 'function'; // Rust-specific check
+    const isAssemblyScript = !isTinyGo && !isRust;
 
     function writeStringToMemory(str) {
       console.log(`JS: Writing string "${str}" to memory`);
@@ -132,12 +134,33 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
+    function writeStringToMemoryRust(str) {
+      console.log(`JS: Writing string "${str}" to memory (Rust)`);
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(str);
+      const ptr = instance.exports.alloc(bytes.length);
+      const buffer = new Uint8Array(memory.buffer, ptr, bytes.length);
+      buffer.set(bytes);
+      console.log(`JS: Allocated string at ${ptr}`);
+      return { ptr, len: bytes.length };
+    }
+
+    function readStringFromMemoryRust(ptr) {
+      console.log(`JS: Reading string from memory at ${ptr} (Rust)`);
+      let len = 0;
+      while (new Uint8Array(memory.buffer)[ptr + len] !== 0) len++;
+      const buffer = new Uint8Array(memory.buffer, ptr, len);
+      const str = new TextDecoder().decode(buffer);
+      console.log(`JS: Read string: "${str}"`);
+      return str;
+    }
+
     const amount = "745";
     const account = "1234567";
     
     let amountPtr, accountPtr, creditResultPtr, debitResultPtr, creditResult, debitResult;
 
-    if (!isTinyGo) {
+    if (isAssemblyScript) {
       // AssemblyScript logic
       console.log('JS: Writing amount string to memory');
       amountPtr = writeStringToMemory(amount);
@@ -155,7 +178,7 @@ async function executeWasmFile(filePath) {
       console.log('JS: Reading debit result from memory');
       debitResult = readStringFromMemory(debitResultPtr);
       console.log('Result of execute_debit_leg:', debitResult);
-    } else {
+    } else if (isTinyGo) {
       // TinyGo logic
       console.log('JS: Writing amount string to memory (TinyGo)');
       const amountMem = writeStringToMemoryTinyGo(amount);
@@ -173,8 +196,31 @@ async function executeWasmFile(filePath) {
       console.log('JS: Reading debit result from memory (TinyGo)');
       debitResult = readStringFromMemoryTinyGo(debitResultPtr);
       console.log('Result of execute_debit_leg:', debitResult);
+    } else if (isRust) {
+      // Rust logic
+      console.log('JS: Writing amount string to memory (Rust)');
+      const amountMem = writeStringToMemoryRust(amount);
+      console.log('JS: Writing account string to memory (Rust)');
+      const accountMem = writeStringToMemoryRust(account);
+      
+      console.log('JS: Calling execute_credit_leg (Rust)');
+      creditResultPtr = instance.exports.execute_credit_leg(amountMem.ptr, amountMem.len, accountMem.ptr, accountMem.len);
+      console.log('JS: Reading credit result from memory (Rust)');
+      creditResult = readStringFromMemoryRust(creditResultPtr);
+      console.log('Result of execute_credit_leg:', creditResult);
+      
+      console.log('JS: Calling execute_debit_leg (Rust)');
+      debitResultPtr = instance.exports.execute_debit_leg(amountMem.ptr, amountMem.len, accountMem.ptr, accountMem.len);
+      console.log('JS: Reading debit result from memory (Rust)');
+      debitResult = readStringFromMemoryRust(debitResultPtr);
+      console.log('Result of execute_debit_leg:', debitResult);
+
+      // Clean up (Rust-specific)
+      instance.exports.dealloc(amountMem.ptr, amountMem.len);
+      instance.exports.dealloc(accountMem.ptr, accountMem.len);
     }
 
+    console.log(`Testing WASM file: ${filePath}`);
     return { success: true, creditResult, debitResult };
   } catch (error) {
     console.error("Error executing WASM file:", error);
@@ -183,3 +229,15 @@ async function executeWasmFile(filePath) {
 }
 
 module.exports = { executeWasmFile };
+
+
+
+
+
+
+
+
+
+
+
+
