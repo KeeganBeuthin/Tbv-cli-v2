@@ -41,4 +41,24 @@ func logList(listPtr *byte, listLen int) {
 	fmt.Printf("Received test list: %s\n", list)
 }
 
+//export add_to_list
+func add_to_list(itemPtr *byte, itemLen int) *byte {
+	item := string(unsafe.Slice(itemPtr, itemLen))
+	message := fmt.Sprintf("add:%s", item)
+	return &([]byte(message)[0])
+}
+
+//export delete_from_list
+func delete_from_list(itemPtr *byte, itemLen int) *byte {
+	item := string(unsafe.Slice(itemPtr, itemLen))
+	message := fmt.Sprintf("delete:%s", item)
+	return &([]byte(message)[0])
+}
+
+//export get_from_list
+func get_from_list(indexPtr *byte, indexLen int) *byte {
+	index := string(unsafe.Slice(indexPtr, indexLen))
+	return &([]byte(index)[0])
+}
+
 func main() {}

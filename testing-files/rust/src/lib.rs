@@ -49,3 +49,32 @@ pub extern "C" fn execute_debit_leg(amount_ptr: *const u8, amount_len: usize, ac
     std::mem::forget(bytes);
     ptr
 }
+
+#[no_mangle]
+pub extern "C" fn add_to_list(item_ptr: *const u8, item_len: usize) -> *const u8 {
+    let item = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(item_ptr, item_len)) };
+    let result = format!("add:{}", item);
+    let bytes = result.into_bytes();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn delete_from_list(item_ptr: *const u8, item_len: usize) -> *const u8 {
+    let item = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(item_ptr, item_len)) };
+    let result = format!("delete:{}", item);
+    let bytes = result.into_bytes();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn get_from_list(index_ptr: *const u8, index_len: usize) -> *const u8 {
+    let index = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(index_ptr, index_len)) };
+    let bytes = index.as_bytes().to_vec();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}

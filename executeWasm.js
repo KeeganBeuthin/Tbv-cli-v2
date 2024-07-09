@@ -2,7 +2,7 @@ const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require('axios');
-const { startServer } = require('./simpleApi');
+const apiServer = require('./simpleApi');
 
 async function executeWasmFile(filePath) {
   try {
@@ -105,6 +105,10 @@ async function executeWasmFile(filePath) {
     const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
+
+
+
+    
     function writeStringToMemory(str) {
       console.log(`JS: Writing string "${str}" to memory`);
       const encoder = new TextEncoder();
@@ -164,6 +168,33 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
+    async function callApiAddToList(item) {
+      try {
+        const response = await axios.post('http://localhost:3000/list', { item });
+        return response.data.message;
+      } catch (error) {
+        return `Error: ${error.response.data.error}`;
+      }
+    }
+    
+    async function callApiDeleteFromList(item) {
+      try {
+        const response = await axios.delete(`http://localhost:3000/list/${item}`);
+        return response.data.message;
+      } catch (error) {
+        return `Error: ${error.response.data.error}`;
+      }
+    }
+    
+    async function callApiGetFromList(index) {
+      try {
+        const response = await axios.get(`http://localhost:3000/list/${index}`);
+        return response.data.item;
+      } catch (error) {
+        return `Error: ${error.response.data.error}`;
+      }
+    }
+
     const amount = "745";
     const account = "1234567";
 
@@ -198,53 +229,74 @@ async function executeWasmFile(filePath) {
       console.log("JS: Reading debit result from memory");
       debitResult = readStringFromMemory(debitResultPtr);
       console.log("Result of execute_debit_leg:", debitResult);
+
+      console.log("JS: Calling add_to_list");
+      const addItemPtr = writeStringToMemory("grape");
+      const addResultPtr = instance.exports.add_to_list(addItemPtr);
+      const addResult = readStringFromMemory(addResultPtr);
+      console.log("Result of add_to_list:", await callApiAddToList(addResult));
+    
+      console.log("JS: Calling delete_from_list");
+      const deleteItemPtr = writeStringToMemory("banana");
+      const deleteResultPtr = instance.exports.delete_from_list(deleteItemPtr);
+      const deleteResult = readStringFromMemory(deleteResultPtr);
+      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
+    
+      console.log("JS: Calling get_from_list");
+      const getIndexPtr = writeStringToMemory("1");
+      const getResultPtr = instance.exports.get_from_list(getIndexPtr);
+      const getResult = readStringFromMemory(getResultPtr);
+      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
+
+      apiServer.close();
     } else if (isTinyGo) {
       // TinyGo logic
-      const server = await startServer();
-      try {
-        // Call the API to get the test data
-        const response = await axios.get('http://localhost:3000/test');
-        const testData = JSON.stringify(response.data);
-    
-        // Call the logList function
-        const encoder = new TextEncoder();
-        const encodedTestData = encoder.encode(testData);
-        const ptr = writeStringToMemoryTinyGo(testData);
-        instance.exports.logList(ptr, encodedTestData.length);
-    
-        // Process each item from the API response
-        for (const item of response.data) {
-          const { amount, account } = item;
-          console.log(`Processing item: Amount ${amount}, Account ${account}`);
-    
-          const amountPtr = writeStringToMemoryTinyGo(amount);
-          const accountPtr = writeStringToMemoryTinyGo(account);
-    
-          const creditResultPtr = instance.exports.execute_credit_leg(
-            amountPtr,
-            amount.length,
-            accountPtr,
-            account.length
-          );
-          const creditResult = readStringFromMemoryTinyGo(creditResultPtr);
-          console.log("Credit Result:", creditResult);
-    
-          const debitResultPtr = instance.exports.execute_debit_leg(
-            amountPtr,
-            amount.length,
-            accountPtr,
-            account.length
-          );
-          const debitResult = readStringFromMemoryTinyGo(debitResultPtr);
-          console.log("Debit Result:", debitResult);
-        }
-      } finally {
-        // Close the server
-        server.close(() => {
-          console.log('API server closed');
-        });
-      }
+      console.log("JS: Writing amount string to memory (TinyGo)");
+      const amountMem = writeStringToMemoryTinyGo(amount);
+      console.log("JS: Writing account string to memory (TinyGo)");
+      const accountMem = writeStringToMemoryTinyGo(account);
 
+      console.log("JS: Calling execute_credit_leg (TinyGo)");
+      creditResultPtr = instance.exports.execute_credit_leg(
+        amountMem.ptr,
+        amountMem.length,
+        accountMem.ptr,
+        accountMem.length
+      );
+      console.log("JS: Reading credit result from memory (TinyGo)");
+      creditResult = readStringFromMemoryTinyGo(creditResultPtr);
+      console.log("Result of execute_credit_leg:", creditResult);
+
+      console.log("JS: Calling execute_debit_leg (TinyGo)");
+      debitResultPtr = instance.exports.execute_debit_leg(
+        amountMem.ptr,
+        amountMem.length,
+        accountMem.ptr,
+        accountMem.length
+      );
+      console.log("JS: Reading debit result from memory (TinyGo)");
+      debitResult = readStringFromMemoryTinyGo(debitResultPtr);
+      console.log("Result of execute_debit_leg:", debitResult);
+
+      console.log("JS: Calling add_to_list (TinyGo)");
+      const addItemMem = writeStringToMemoryTinyGo("grape");
+      const addResultPtr = instance.exports.add_to_list(addItemMem.ptr, addItemMem.length);
+      const addResult = readStringFromMemoryTinyGo(addResultPtr);
+      console.log("Result of add_to_list:", await callApiAddToList(addResult));
+    
+      console.log("JS: Calling delete_from_list (TinyGo)");
+      const deleteItemMem = writeStringToMemoryTinyGo("banana");
+      const deleteResultPtr = instance.exports.delete_from_list(deleteItemMem.ptr, deleteItemMem.length);
+      const deleteResult = readStringFromMemoryTinyGo(deleteResultPtr);
+      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
+    
+      console.log("JS: Calling get_from_list (TinyGo)");
+      const getIndexMem = writeStringToMemoryTinyGo("1");
+      const getResultPtr = instance.exports.get_from_list(getIndexMem.ptr, getIndexMem.length);
+      const getResult = readStringFromMemoryTinyGo(getResultPtr);
+      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
+
+      apiServer.close();
     } else if (isRust) {
       // Rust logic
       console.log("JS: Writing amount string to memory (Rust)");
@@ -276,6 +328,30 @@ async function executeWasmFile(filePath) {
 
       instance.exports.dealloc(amountMem.ptr, amountMem.len);
       instance.exports.dealloc(accountMem.ptr, accountMem.len);
+
+      console.log("JS: Calling add_to_list (Rust)");
+      const addItemMem = writeStringToMemoryRust("grape");
+      const addResultPtr = instance.exports.add_to_list(addItemMem.ptr, addItemMem.len);
+      const addResult = readStringFromMemoryRust(addResultPtr);
+      console.log("Result of add_to_list:", await callApiAddToList(addResult));
+    
+      console.log("JS: Calling delete_from_list (Rust)");
+      const deleteItemMem = writeStringToMemoryRust("banana");
+      const deleteResultPtr = instance.exports.delete_from_list(deleteItemMem.ptr, deleteItemMem.len);
+      const deleteResult = readStringFromMemoryRust(deleteResultPtr);
+      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
+    
+      console.log("JS: Calling get_from_list (Rust)");
+      const getIndexMem = writeStringToMemoryRust("1");
+      const getResultPtr = instance.exports.get_from_list(getIndexMem.ptr, getIndexMem.len);
+      const getResult = readStringFromMemoryRust(getResultPtr);
+      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
+    
+      instance.exports.dealloc(addItemMem.ptr, addItemMem.len);
+      instance.exports.dealloc(deleteItemMem.ptr, deleteItemMem.len);
+      instance.exports.dealloc(getIndexMem.ptr, getIndexMem.len);
+
+      apiServer.close();
     }
 
     console.log(`Testing WASM file: ${filePath}`);

@@ -105,3 +105,33 @@ export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
 export function getMemorySize(): i32 {
   return memory.size() * 65536;
 }
+
+export function add_to_list(itemPtr: usize): usize {
+  const itemLen = getStringLen(itemPtr);
+  const item = readString(itemPtr, itemLen);
+  const message = `add:${String.UTF8.decode(changetype<ArrayBuffer>(item))}`;
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  return messagePtr;
+}
+
+export function delete_from_list(itemPtr: usize): usize {
+  const itemLen = getStringLen(itemPtr);
+  const item = readString(itemPtr, itemLen);
+  const message = `delete:${String.UTF8.decode(changetype<ArrayBuffer>(item))}`;
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  return messagePtr;
+}
+
+export function get_from_list(indexPtr: usize): usize {
+  const indexLen = getStringLen(indexPtr);
+  const index = readString(indexPtr, indexLen);
+  const message = `${String.UTF8.decode(changetype<ArrayBuffer>(index))}`;
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  return messagePtr;
+}
