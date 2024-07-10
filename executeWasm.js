@@ -1,8 +1,8 @@
 const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
-const axios = require('axios');
-const apiServer = require('./simpleApi');
+const axios = require("axios");
+const apiServer = require("./simpleApi");
 
 async function executeWasmFile(filePath) {
   try {
@@ -105,10 +105,6 @@ async function executeWasmFile(filePath) {
     const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
-
-
-
-    
     function writeStringToMemory(str) {
       console.log(`JS: Writing string "${str}" to memory`);
       const encoder = new TextEncoder();
@@ -122,10 +118,21 @@ async function executeWasmFile(filePath) {
     function readStringFromMemory(ptr) {
       console.log(`JS: Reading string from memory at ${ptr}`);
       const len = instance.exports.getStringLen(ptr);
+      console.log(`JS: String length: ${len}`);
       const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      console.log(
+        `JS: Raw bytes:`,
+        Array.from(buffer)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("")
+      );
       const str = new TextDecoder().decode(buffer);
       console.log(`JS: Read string: "${str}"`);
       return str;
+    }
+
+    function sanitizeString(str) {
+      return str.replace(/[\x00-\x1F\x7F]/g, "");
     }
 
     function writeStringToMemoryTinyGo(str) {
@@ -170,25 +177,44 @@ async function executeWasmFile(filePath) {
 
     async function callApiAddToList(item) {
       try {
-        const response = await axios.post('http://localhost:3000/list', { item });
+        console.log("Sending item:", item);
+        console.log("Item length:", item.length);
+        console.log("Item bytes:", Buffer.from(item).toString("hex"));
+        const response = await axios.post("http://localhost:3000/list", {
+          item,
+        });
+        console.log(
+          `Current list after adding ${item}:`,
+          response.data.currentList
+        );
         return response.data.message;
       } catch (error) {
         return `Error: ${error.response.data.error}`;
       }
     }
-    
+
     async function callApiDeleteFromList(item) {
       try {
-        const response = await axios.delete(`http://localhost:3000/list/${item}`);
+        const response = await axios.delete(
+          `http://localhost:3000/list/${item}`
+        );
+        console.log(
+          `Current list after deleting ${item}:`,
+          response.data.currentList
+        );
         return response.data.message;
       } catch (error) {
         return `Error: ${error.response.data.error}`;
       }
     }
-    
+
     async function callApiGetFromList(index) {
       try {
         const response = await axios.get(`http://localhost:3000/list/${index}`);
+        console.log(
+          `Current list when getting item at index ${index}:`,
+          response.data.currentList
+        );
         return response.data.item;
       } catch (error) {
         return `Error: ${error.response.data.error}`;
@@ -234,19 +260,50 @@ async function executeWasmFile(filePath) {
       const addItemPtr = writeStringToMemory("grape");
       const addResultPtr = instance.exports.add_to_list(addItemPtr);
       const addResult = readStringFromMemory(addResultPtr);
-      console.log("Result of add_to_list:", await callApiAddToList(addResult));
-    
+      const sanitizedAddResult = sanitizeString(addResult);
+      console.log(`JS: Sanitized add result: "${sanitizedAddResult}"`);
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(sanitizedAddResult.split(":")[1])
+      );
+
       console.log("JS: Calling delete_from_list");
       const deleteItemPtr = writeStringToMemory("banana");
       const deleteResultPtr = instance.exports.delete_from_list(deleteItemPtr);
       const deleteResult = readStringFromMemory(deleteResultPtr);
-      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
-    
+      console.log(
+        "Result of delete_from_list:",
+        await callApiDeleteFromList(deleteResult.split(":")[1])
+      );
+
       console.log("JS: Calling get_from_list");
       const getIndexPtr = writeStringToMemory("1");
       const getResultPtr = instance.exports.get_from_list(getIndexPtr);
       const getResult = readStringFromMemory(getResultPtr);
-      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult))
+      );
+
+      console.log("JS: Adding another item");
+      const addItemPtr2 = writeStringToMemory("kiwi");
+      const addResultPtr2 = instance.exports.add_to_list(addItemPtr2);
+      const addResult2 = readStringFromMemory(addResultPtr2);
+      const sanitizedAddResult2 = sanitizeString(addResult2);
+      console.log(`JS: Sanitized add result: "${sanitizedAddResult2}"`);
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(sanitizedAddResult2.split(":")[1])
+      );
+
+      console.log("JS: Getting item at index 3");
+      const getIndexPtr2 = writeStringToMemory("3");
+      const getResultPtr2 = instance.exports.get_from_list(getIndexPtr2);
+      const getResult2 = readStringFromMemory(getResultPtr2);
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult2))
+      );
 
       apiServer.close();
     } else if (isTinyGo) {
@@ -280,21 +337,64 @@ async function executeWasmFile(filePath) {
 
       console.log("JS: Calling add_to_list (TinyGo)");
       const addItemMem = writeStringToMemoryTinyGo("grape");
-      const addResultPtr = instance.exports.add_to_list(addItemMem.ptr, addItemMem.length);
+      const addResultPtr = instance.exports.add_to_list(
+        addItemMem.ptr,
+        addItemMem.length
+      );
       const addResult = readStringFromMemoryTinyGo(addResultPtr);
-      console.log("Result of add_to_list:", await callApiAddToList(addResult));
-    
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(addResult.split(":")[1])
+      );
+
       console.log("JS: Calling delete_from_list (TinyGo)");
       const deleteItemMem = writeStringToMemoryTinyGo("banana");
-      const deleteResultPtr = instance.exports.delete_from_list(deleteItemMem.ptr, deleteItemMem.length);
+      const deleteResultPtr = instance.exports.delete_from_list(
+        deleteItemMem.ptr,
+        deleteItemMem.length
+      );
       const deleteResult = readStringFromMemoryTinyGo(deleteResultPtr);
-      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
-    
+      console.log(
+        "Result of delete_from_list:",
+        await callApiDeleteFromList(deleteResult.split(":")[1])
+      );
+
       console.log("JS: Calling get_from_list (TinyGo)");
       const getIndexMem = writeStringToMemoryTinyGo("1");
-      const getResultPtr = instance.exports.get_from_list(getIndexMem.ptr, getIndexMem.length);
+      const getResultPtr = instance.exports.get_from_list(
+        getIndexMem.ptr,
+        getIndexMem.length
+      );
       const getResult = readStringFromMemoryTinyGo(getResultPtr);
-      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult))
+      );
+
+      // Add more test cases
+      console.log("JS: Adding another item (TinyGo)");
+      const addItemMem2 = writeStringToMemoryTinyGo("kiwi");
+      const addResultPtr2 = instance.exports.add_to_list(
+        addItemMem2.ptr,
+        addItemMem2.length
+      );
+      const addResult2 = readStringFromMemoryTinyGo(addResultPtr2);
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(addResult2.split(":")[1])
+      );
+
+      console.log("JS: Getting item at index 3 (TinyGo)");
+      const getIndexMem2 = writeStringToMemoryTinyGo("3");
+      const getResultPtr2 = instance.exports.get_from_list(
+        getIndexMem2.ptr,
+        getIndexMem2.length
+      );
+      const getResult2 = readStringFromMemoryTinyGo(getResultPtr2);
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult2))
+      );
 
       apiServer.close();
     } else if (isRust) {
@@ -331,25 +431,70 @@ async function executeWasmFile(filePath) {
 
       console.log("JS: Calling add_to_list (Rust)");
       const addItemMem = writeStringToMemoryRust("grape");
-      const addResultPtr = instance.exports.add_to_list(addItemMem.ptr, addItemMem.len);
+      const addResultPtr = instance.exports.add_to_list(
+        addItemMem.ptr,
+        addItemMem.len
+      );
       const addResult = readStringFromMemoryRust(addResultPtr);
-      console.log("Result of add_to_list:", await callApiAddToList(addResult));
-    
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(addResult.split(":")[1])
+      );
+
       console.log("JS: Calling delete_from_list (Rust)");
       const deleteItemMem = writeStringToMemoryRust("banana");
-      const deleteResultPtr = instance.exports.delete_from_list(deleteItemMem.ptr, deleteItemMem.len);
+      const deleteResultPtr = instance.exports.delete_from_list(
+        deleteItemMem.ptr,
+        deleteItemMem.len
+      );
       const deleteResult = readStringFromMemoryRust(deleteResultPtr);
-      console.log("Result of delete_from_list:", await callApiDeleteFromList(deleteResult));
-    
+      console.log(
+        "Result of delete_from_list:",
+        await callApiDeleteFromList(deleteResult.split(":")[1])
+      );
+
       console.log("JS: Calling get_from_list (Rust)");
       const getIndexMem = writeStringToMemoryRust("1");
-      const getResultPtr = instance.exports.get_from_list(getIndexMem.ptr, getIndexMem.len);
+      const getResultPtr = instance.exports.get_from_list(
+        getIndexMem.ptr,
+        getIndexMem.len
+      );
       const getResult = readStringFromMemoryRust(getResultPtr);
-      console.log("Result of get_from_list:", await callApiGetFromList(parseInt(getResult)));
-    
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult))
+      );
+
+      // Add more test cases
+      console.log("JS: Adding another item (Rust)");
+      const addItemMem2 = writeStringToMemoryRust("kiwi");
+      const addResultPtr2 = instance.exports.add_to_list(
+        addItemMem2.ptr,
+        addItemMem2.len
+      );
+      const addResult2 = readStringFromMemoryRust(addResultPtr2);
+      console.log(
+        "Result of add_to_list:",
+        await callApiAddToList(addResult2.split(":")[1])
+      );
+
+      console.log("JS: Getting item at index 3 (Rust)");
+      const getIndexMem2 = writeStringToMemoryRust("3");
+      const getResultPtr2 = instance.exports.get_from_list(
+        getIndexMem2.ptr,
+        getIndexMem2.len
+      );
+      const getResult2 = readStringFromMemoryRust(getResultPtr2);
+      console.log(
+        "Result of get_from_list:",
+        await callApiGetFromList(parseInt(getResult2))
+      );
+
       instance.exports.dealloc(addItemMem.ptr, addItemMem.len);
       instance.exports.dealloc(deleteItemMem.ptr, deleteItemMem.len);
       instance.exports.dealloc(getIndexMem.ptr, getIndexMem.len);
+      instance.exports.dealloc(addItemMem2.ptr, addItemMem2.len);
+      instance.exports.dealloc(getIndexMem2.ptr, getIndexMem2.len);
 
       apiServer.close();
     }
