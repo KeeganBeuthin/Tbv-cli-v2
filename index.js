@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const { generateDockerfile } = require("./conversion_dockerfile");
 const { spawn } = require("child_process");
-const { executeWasmFile } = require("./executeWasm");
+const { executeWasmFile, startApiServer } = require("./executeWasm");
 
 const program = new Command();
 
@@ -30,6 +30,7 @@ program
   .command("test <wasmFile>")
   .description("Execute and test a specific wasm file")
   .action(async (wasmFile) => {
+    startApiServer();
     const filePath = path.resolve(wasmFile);
     if (!fs.existsSync(filePath)) {
       console.error(`WASM file ${filePath} does not exist.`);

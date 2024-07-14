@@ -81,5 +81,4 @@ app.get("/rdf/query", (req, res) => {
   }
 });
 
-
 module.exports = server;

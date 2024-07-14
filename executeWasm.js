@@ -2,11 +2,21 @@ const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require("axios");
-const apiServer = require("./simpleApi");
+
+let apiServer = null;
+
+function startApiServer() {
+  if (!apiServer) {
+    apiServer = require("./simpleApi");
+    console.log("Mock API server is running on port 3000");
+  }
+}
 
 async function executeWasmFile(filePath) {
   try {
     const wasmBuffer = await promisify(fs.readFile)(filePath);
+
+    startApiServer();
 
     const importObject = {
       env: {
@@ -135,7 +145,6 @@ async function executeWasmFile(filePath) {
       return str.replace(/[\x00-\x1F\x7F]/g, "");
     }
 
-
     async function getRDFData() {
       try {
         const response = await axios.get("http://localhost:3000/rdf");
@@ -145,10 +154,12 @@ async function executeWasmFile(filePath) {
         return null;
       }
     }
-    
+
     async function addRDFData(data) {
       try {
-        const response = await axios.post("http://localhost:3000/rdf", { data });
+        const response = await axios.post("http://localhost:3000/rdf", {
+          data,
+        });
         console.log("RDF data added:", response.data.message);
         return response.data.currentStore;
       } catch (error) {
@@ -156,17 +167,18 @@ async function executeWasmFile(filePath) {
         return null;
       }
     }
-    
+
     async function queryRDFData(query) {
       try {
-        const response = await axios.get("http://localhost:3000/rdf/query", { params: { query } });
+        const response = await axios.get("http://localhost:3000/rdf/query", {
+          params: { query },
+        });
         return response.data.result;
       } catch (error) {
         console.error("Error querying RDF data:", error);
         return null;
       }
     }
-
 
     function writeStringToMemoryTinyGo(str) {
       console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
@@ -345,11 +357,11 @@ async function executeWasmFile(filePath) {
       const rdfResultPtr = instance.exports.Rdf_Test(rdfDataPtr);
       const rdfTestResult = readStringFromMemory(rdfResultPtr);
       console.log("RDF Test Result:", rdfTestResult);
-    
-      const extractedRDFData = rdfTestResult.split(':')[1];
+
+      const extractedRDFData = rdfTestResult.split(":")[1];
       const updatedStore = await addRDFData(extractedRDFData);
       console.log("Updated RDF Store:", updatedStore);
-    
+
       const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
       console.log("Query Result:", queryResult);
 
@@ -445,20 +457,22 @@ async function executeWasmFile(filePath) {
       );
 
       console.log("JS: Running RDF Test (TinyGo)");
-  const initialRDFData = await getRDFData();
-  console.log("Initial RDF Data:", initialRDFData);
-  const rdfDataMem = writeStringToMemoryTinyGo(initialRDFData);
-  const rdfResultPtr = instance.exports.Rdf_Test(rdfDataMem.ptr, rdfDataMem.length);
-  const rdfTestResult = readStringFromMemoryTinyGo(rdfResultPtr);
-  console.log("RDF Test Result:", rdfTestResult);
+      const initialRDFData = await getRDFData();
+      console.log("Initial RDF Data:", initialRDFData);
+      const rdfDataMem = writeStringToMemoryTinyGo(initialRDFData);
+      const rdfResultPtr = instance.exports.Rdf_Test(
+        rdfDataMem.ptr,
+        rdfDataMem.length
+      );
+      const rdfTestResult = readStringFromMemoryTinyGo(rdfResultPtr);
+      console.log("RDF Test Result:", rdfTestResult);
 
-  const extractedRDFData = rdfTestResult.split(':')[1];
-  const updatedStore = await addRDFData(extractedRDFData);
-  console.log("Updated RDF Store:", updatedStore);
+      const extractedRDFData = rdfTestResult.split(":")[1];
+      const updatedStore = await addRDFData(extractedRDFData);
+      console.log("Updated RDF Store:", updatedStore);
 
-  const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
-  console.log("Query Result:", queryResult);
-
+      const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
+      console.log("Query Result:", queryResult);
 
       apiServer.close();
     } else if (isRust) {
@@ -564,28 +578,31 @@ async function executeWasmFile(filePath) {
       const initialRDFData = await getRDFData();
       console.log("Initial RDF Data:", initialRDFData);
       const rdfDataMem = writeStringToMemoryRust(initialRDFData);
-      const rdfResultPtr = instance.exports.Rdf_Test(rdfDataMem.ptr, rdfDataMem.len);
+      const rdfResultPtr = instance.exports.Rdf_Test(
+        rdfDataMem.ptr,
+        rdfDataMem.len
+      );
       const rdfTestResult = readStringFromMemoryRust(rdfResultPtr);
       console.log("RDF Test Result:", rdfTestResult);
-    
-      const extractedRDFData = rdfTestResult.split(':')[1];
+
+      const extractedRDFData = rdfTestResult.split(":")[1];
       const updatedStore = await addRDFData(extractedRDFData);
       console.log("Updated RDF Store:", updatedStore);
-    
+
       const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
       console.log("Query Result:", queryResult);
-    
+
       instance.exports.dealloc(rdfDataMem.ptr, rdfDataMem.len);
 
       apiServer.close();
     }
 
     console.log(`Testing WASM file: ${filePath}`);
-   return { success: true, creditResult };
+    return { success: true, creditResult };
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
   }
 }
 
-module.exports = { executeWasmFile };
+module.exports = { executeWasmFile, startApiServer };
