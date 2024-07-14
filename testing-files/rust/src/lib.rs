@@ -71,6 +71,16 @@ pub extern "C" fn delete_from_list(item_ptr: *const u8, item_len: usize) -> *con
 }
 
 #[no_mangle]
+pub extern "C" fn Rdf_Test(rdf_data_ptr: *const u8, rdf_data_len: usize) -> *const u8 {
+    let rdf_data = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(rdf_data_ptr, rdf_data_len)) };
+    let result = format!("RDF_TEST:{}", rdf_data);
+    let bytes = result.into_bytes();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
 pub extern "C" fn get_from_list(index_ptr: *const u8, index_len: usize) -> *const u8 {
     let index = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(index_ptr, index_len)) };
     let bytes = index.as_bytes().to_vec();

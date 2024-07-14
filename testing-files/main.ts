@@ -68,6 +68,16 @@ export function readString(ptr: usize, len: i32): usize {
   return newPtr;
 }
 
+export function Rdf_Test(rdfDataPtr: usize): usize {
+  const rdfDataLen = getStringLen(rdfDataPtr);
+  const rdfData = readString(rdfDataPtr, rdfDataLen);
+  const message = `RDF_TEST:${String.UTF8.decode(changetype<ArrayBuffer>(rdfData))}`;
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  return messagePtr;
+}
+
 export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   const amountLen = getStringLen(amountPtr);
   const accountLen = getStringLen(accountPtr);

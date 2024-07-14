@@ -61,4 +61,11 @@ func get_from_list(indexPtr *byte, indexLen int) *byte {
 	return &([]byte(index)[0])
 }
 
+//export Rdf_Test
+func Rdf_Test(rdfDataPtr *byte, rdfDataLen int) *byte {
+	rdfData := string(unsafe.Slice(rdfDataPtr, rdfDataLen))
+	message := fmt.Sprintf("RDF_TEST:%s", rdfData)
+	return &([]byte(message)[0])
+}
+
 func main() {}

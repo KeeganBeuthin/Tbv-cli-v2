@@ -7,6 +7,11 @@ app.use(bodyParser.json());
 
 let itemList = ["apple", "banana", "cherry"];
 
+let rdfStore = `
+@prefix ex: <http://example.org/> .
+ex:subject ex:predicate ex:object .
+`;
+
 app.get("/list", (req, res) => {
   res.json(itemList);
 });
@@ -50,5 +55,31 @@ app.get("/list/:index", (req, res) => {
 const server = app.listen(3000, () => {
   console.log("Mock API server is running on port 3000");
 });
+
+app.get("/rdf", (req, res) => {
+  res.json({ data: rdfStore });
+});
+
+app.post("/rdf", (req, res) => {
+  const { data } = req.body;
+  if (data) {
+    rdfStore += data;
+    res.status(201).json({ message: "RDF data added", currentStore: rdfStore });
+  } else {
+    res.status(400).json({ error: "RDF data is required" });
+  }
+});
+
+app.get("/rdf/query", (req, res) => {
+  const { query } = req.query;
+  if (query) {
+    // This is a mock query - in a real scenario, you'd use an RDF library to process the query
+    const mockResult = `Query result for: ${query}`;
+    res.json({ result: mockResult });
+  } else {
+    res.status(400).json({ error: "Query parameter is required" });
+  }
+});
+
 
 module.exports = server;
