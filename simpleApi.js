@@ -12,6 +12,14 @@ let rdfStore = `
 ex:subject ex:predicate ex:object .
 `;
 
+let books = [
+  {"title": "The Catcher in the Rye", "authorName": "J.D. Salinger"},
+  {"title": "To Kill a Mockingbird", "authorName": "Harper Lee"},
+  {"title": "1984", "authorName": "George Orwell"}
+];
+
+
+
 app.get("/list", (req, res) => {
   res.json(itemList);
 });
@@ -52,33 +60,51 @@ app.get("/list/:index", (req, res) => {
   }
 });
 
+
+app.get("/books", (req, res) => {
+  res.json(books);
+});
+
+app.post("/books", (req, res) => {
+  const { title, authorName } = req.body;
+  if (title && authorName) {
+    const newBook = { title, authorName };
+    books.push(newBook);
+    res.status(201).json({ message: "Book added", book: newBook, currentBooks: books });
+  } else {
+    res.status(400).json({ error: "Title and authorName are required" });
+  }
+});
+
+app.delete("/books/:title", (req, res) => {
+  const { title } = req.params;
+  const index = books.findIndex(book => book.title === title);
+  if (index > -1) {
+    const deletedBook = books.splice(index, 1)[0];
+    res.json({ message: "Book deleted", book: deletedBook, currentBooks: books });
+  } else {
+    res.status(404).json({ error: "Book not found" });
+  }
+});
+
+app.get("/books/:title", (req, res) => {
+  const { title } = req.params;
+  const book = books.find(book => book.title === title);
+  if (book) {
+    res.json({ book, currentBooks: books });
+  } else {
+    res.status(404).json({ error: "Book not found" });
+  }
+});
+
+// Modify the existing /rdf endpoint to return books data
+app.get("/rdf", (req, res) => {
+  res.json({ data: JSON.stringify(books) });
+});
+
 const server = app.listen(3000, () => {
   console.log("Mock API server is running on port 3000");
 });
 
-app.get("/rdf", (req, res) => {
-  res.json({ data: rdfStore });
-});
-
-app.post("/rdf", (req, res) => {
-  const { data } = req.body;
-  if (data) {
-    rdfStore += data;
-    res.status(201).json({ message: "RDF data added", currentStore: rdfStore });
-  } else {
-    res.status(400).json({ error: "RDF data is required" });
-  }
-});
-
-app.get("/rdf/query", (req, res) => {
-  const { query } = req.query;
-  if (query) {
-    // This is a mock query - in a real scenario, you'd use an RDF library to process the query
-    const mockResult = `Query result for: ${query}`;
-    res.json({ result: mockResult });
-  } else {
-    res.status(400).json({ error: "Query parameter is required" });
-  }
-});
 
 module.exports = server;

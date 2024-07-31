@@ -8,6 +8,17 @@ declare function abort(message: string | null, fileName: string | null, lineNumb
 @external("env", "logMessage")
 declare function logMessage(ptr: usize, len: i32): void;
 
+class Book {
+  title: string;
+  authorName: string;
+
+  constructor(title: string, authorName: string) {
+    this.title = title;
+    this.authorName = authorName;
+  }
+}
+
+
 function consoleLog(message: string): void {
   const encoded = String.UTF8.encode(message);
   logMessage(changetype<usize>(encoded), encoded.byteLength);
@@ -19,6 +30,7 @@ export function allocateString(len: i32): usize {
   consoleLog(`Allocated buffer for string at ${ptr} with length ${len}`);
   return ptr;
 }
+
 
 export function AssemblyScript(): void {}
 
@@ -68,7 +80,7 @@ export function readString(ptr: usize, len: i32): usize {
   return newPtr;
 }
 
-export function Rdf_Test(rdfDataPtr: usize): usize {
+export function Rdf_Test2(rdfDataPtr: usize): usize {
   const rdfDataLen = getStringLen(rdfDataPtr);
   const rdfData = readString(rdfDataPtr, rdfDataLen);
   const message = `RDF_TEST:${String.UTF8.decode(changetype<ArrayBuffer>(rdfData))}`;
@@ -112,9 +124,7 @@ export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
   return messagePtr;
 }
 
-export function getMemorySize(): i32 {
-  return memory.size() * 65536;
-}
+
 
 export function add_to_list(itemPtr: usize): usize {
   const itemLen = getStringLen(itemPtr);
@@ -144,4 +154,75 @@ export function get_from_list(indexPtr: usize): usize {
   const messagePtr = allocateString(messageEncoded.byteLength);
   writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
   return messagePtr;
+}
+
+function parseBooks(jsonStr: string): Book[] {
+  const books: Book[] = [];
+  const parts = jsonStr.split("},");
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i].replace("{", "").replace("}", "").replace("[", "").replace("]", "");
+    const fields = part.split(",");
+    let title: string = "";
+    let authorName: string = "";
+    for (let j = 0; j < fields.length; j++) {
+      const keyValue = fields[j].split(":");
+      const key = keyValue[0].split('"').join('').trim();
+      const value = keyValue[1].split('"').join('').trim();
+      if (key === "title") {
+        title = value;
+      } else if (key === "authorName") {
+        authorName = value;
+      }
+    }
+    books.push(new Book(title, authorName));
+  }
+  return books;
+}
+
+export function Rdf_Test(rdfDataPtr: usize): usize {
+  const rdfDataLen = getStringLen(rdfDataPtr);
+  const rdfDataStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(rdfDataPtr, rdfDataLen)));
+
+  const books = parseBooks(rdfDataStr);
+  let result = "RDF_TEST:";
+  for (let i = 0; i < books.length; i++) {
+    result += `Title: ${books[i].title}, Author: ${books[i].authorName}; `;
+  }
+  
+  const resultEncoded = String.UTF8.encode(result);
+  const resultPtr = allocateString(resultEncoded.byteLength);
+  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
+  return resultPtr;
+}
+
+export function add_book(bookDataPtr: usize): usize {
+  const bookDataLen = getStringLen(bookDataPtr);
+  const bookDataStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(bookDataPtr, bookDataLen)));
+  const books = parseBooks(`[${bookDataStr}]`);
+  const book = books[0];
+  const result = `Added book: ${book.title} by ${book.authorName}`;
+  const resultEncoded = String.UTF8.encode(result);
+  const resultPtr = allocateString(resultEncoded.byteLength);
+  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
+  return resultPtr;
+}
+
+export function delete_book(titlePtr: usize): usize {
+  const titleLen = getStringLen(titlePtr);
+  const title = String.UTF8.decode(changetype<ArrayBuffer>(readString(titlePtr, titleLen)));
+  const result = `Deleted book: ${title}`;
+  const resultEncoded = String.UTF8.encode(result);
+  const resultPtr = allocateString(resultEncoded.byteLength);
+  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
+  return resultPtr;
+}
+
+export function get_book(titlePtr: usize): usize {
+  const titleLen = getStringLen(titlePtr);
+  const title = String.UTF8.decode(changetype<ArrayBuffer>(readString(titlePtr, titleLen)));
+  const result = `Retrieved book: ${title}`;
+  const resultEncoded = String.UTF8.encode(result);
+  const resultPtr = allocateString(resultEncoded.byteLength);
+  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
+  return resultPtr;
 }

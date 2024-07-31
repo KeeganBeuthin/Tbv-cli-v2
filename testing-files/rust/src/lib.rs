@@ -1,3 +1,12 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Book {
+    title: String,
+    authorName: String,
+}
+
 #[no_mangle]
 pub extern "C" fn alloc(len: usize) -> *mut u8 {
     let mut buf = Vec::with_capacity(len);
@@ -73,7 +82,17 @@ pub extern "C" fn delete_from_list(item_ptr: *const u8, item_len: usize) -> *con
 #[no_mangle]
 pub extern "C" fn Rdf_Test(rdf_data_ptr: *const u8, rdf_data_len: usize) -> *const u8 {
     let rdf_data = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(rdf_data_ptr, rdf_data_len)) };
-    let result = format!("RDF_TEST:{}", rdf_data);
+    let books: Result<Vec<Book>> = serde_json::from_str(rdf_data);
+    let result = match books {
+        Ok(books) => {
+            let mut result = String::from("RDF_TEST:");
+            for book in books {
+                result.push_str(&format!("Title: {}, Author: {}; ", book.title, book.authorName));
+            }
+            result
+        },
+        Err(e) => format!("Error parsing books data: {:?}", e),
+    };
     let bytes = result.into_bytes();
     let ptr = bytes.as_ptr();
     std::mem::forget(bytes);
@@ -84,6 +103,42 @@ pub extern "C" fn Rdf_Test(rdf_data_ptr: *const u8, rdf_data_len: usize) -> *con
 pub extern "C" fn get_from_list(index_ptr: *const u8, index_len: usize) -> *const u8 {
     let index = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(index_ptr, index_len)) };
     let bytes = index.as_bytes().to_vec();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+
+
+#[no_mangle]
+pub extern "C" fn add_book(book_data_ptr: *const u8, book_data_len: usize) -> *const u8 {
+    let book_data = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(book_data_ptr, book_data_len)) };
+    let book: Result<Book> = serde_json::from_str(book_data);
+    let result = match book {
+        Ok(book) => format!("Added book: {} by {}", book.title, book.authorName),
+        Err(e) => format!("Error parsing book data: {:?}", e),
+    };
+    let bytes = result.into_bytes();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn delete_book(title_ptr: *const u8, title_len: usize) -> *const u8 {
+    let title = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(title_ptr, title_len)) };
+    let result = format!("Deleted book: {}", title);
+    let bytes = result.into_bytes();
+    let ptr = bytes.as_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn get_book(title_ptr: *const u8, title_len: usize) -> *const u8 {
+    let title = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(title_ptr, title_len)) };
+    let result = format!("Retrieved book: {}", title);
+    let bytes = result.into_bytes();
     let ptr = bytes.as_ptr();
     std::mem::forget(bytes);
     ptr

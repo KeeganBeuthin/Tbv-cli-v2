@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"unsafe"
 )
@@ -61,11 +62,50 @@ func get_from_list(indexPtr *byte, indexLen int) *byte {
 	return &([]byte(index)[0])
 }
 
+type Book struct {
+	Title      string `json:"title"`
+	AuthorName string `json:"authorName"`
+}
+
 //export Rdf_Test
 func Rdf_Test(rdfDataPtr *byte, rdfDataLen int) *byte {
 	rdfData := string(unsafe.Slice(rdfDataPtr, rdfDataLen))
-	message := fmt.Sprintf("RDF_TEST:%s", rdfData)
-	return &([]byte(message)[0])
+	var books []Book
+	err := json.Unmarshal([]byte(rdfData), &books)
+	if err != nil {
+		return &([]byte(fmt.Sprintf("Error parsing books data: %v", err))[0])
+	}
+	result := "RDF_TEST:"
+	for _, book := range books {
+		result += fmt.Sprintf("Title: %s, Author: %s; ", book.Title, book.AuthorName)
+	}
+	return &([]byte(result)[0])
+}
+
+//export add_book
+func add_book(bookDataPtr *byte, bookDataLen int) *byte {
+	bookData := string(unsafe.Slice(bookDataPtr, bookDataLen))
+	var book Book
+	err := json.Unmarshal([]byte(bookData), &book)
+	if err != nil {
+		return &([]byte(fmt.Sprintf("Error parsing book data: %v", err))[0])
+	}
+	result := fmt.Sprintf("Added book: %s by %s", book.Title, book.AuthorName)
+	return &([]byte(result)[0])
+}
+
+//export delete_book
+func delete_book(titlePtr *byte, titleLen int) *byte {
+	title := string(unsafe.Slice(titlePtr, titleLen))
+	result := fmt.Sprintf("Deleted book: %s", title)
+	return &([]byte(result)[0])
+}
+
+//export get_book
+func get_book(titlePtr *byte, titleLen int) *byte {
+	title := string(unsafe.Slice(titlePtr, titleLen))
+	result := fmt.Sprintf("Retrieved book: %s", title)
+	return &([]byte(result)[0])
 }
 
 func main() {}

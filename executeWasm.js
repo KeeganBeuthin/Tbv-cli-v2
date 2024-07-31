@@ -44,6 +44,7 @@ async function executeWasmFile(filePath) {
         "syscall/js.valueLength": () => {},
         "syscall/js.valueIndex": () => {},
         "syscall/js.valueCall": () => {},
+        "syscall/js.valueSetIndex": () => {},
       },
       wbg: {
         __wbg_new_abda76e883ba8a5f: () => {},
@@ -145,15 +146,7 @@ async function executeWasmFile(filePath) {
       return str.replace(/[\x00-\x1F\x7F]/g, "");
     }
 
-    async function getRDFData() {
-      try {
-        const response = await axios.get("http://localhost:3000/rdf");
-        return response.data.data;
-      } catch (error) {
-        console.error("Error fetching RDF data:", error);
-        return null;
-      }
-    }
+
 
     async function addRDFData(data) {
       try {
@@ -176,6 +169,48 @@ async function executeWasmFile(filePath) {
         return response.data.result;
       } catch (error) {
         console.error("Error querying RDF data:", error);
+        return null;
+      }
+    }
+
+    async function getRDFData() {
+      try {
+        const response = await axios.get("http://localhost:3000/rdf");
+        return response.data.data;
+      } catch (error) {
+        console.error("Error fetching RDF data:", error);
+        return null;
+      }
+    }
+
+    async function addBook(title, authorName) {
+      try {
+        const response = await axios.post("http://localhost:3000/books", { title, authorName });
+        console.log("Book added:", response.data.message);
+        return response.data.currentBooks;
+      } catch (error) {
+        console.error("Error adding book:", error);
+        return null;
+      }
+    }
+
+    async function deleteBook(title) {
+      try {
+        const response = await axios.delete(`http://localhost:3000/books/${encodeURIComponent(title)}`);
+        console.log("Book deleted:", response.data.message);
+        return response.data.currentBooks;
+      } catch (error) {
+        console.error("Error deleting book:", error);
+        return null;
+      }
+    }
+
+    async function getBook(title) {
+      try {
+        const response = await axios.get(`http://localhost:3000/books/${encodeURIComponent(title)}`);
+        return response.data.book;
+      } catch (error) {
+        console.error("Error getting book:", error);
         return null;
       }
     }
@@ -350,20 +385,40 @@ async function executeWasmFile(filePath) {
         await callApiGetFromList(parseInt(getResult2))
       );
 
-      console.log("JS: Running RDF Test (AssemblyScript)");
-      const initialRDFData = await getRDFData();
-      console.log("Initial RDF Data:", initialRDFData);
-      const rdfDataPtr = writeStringToMemory(initialRDFData);
-      const rdfResultPtr = instance.exports.Rdf_Test(rdfDataPtr);
-      const rdfTestResult = readStringFromMemory(rdfResultPtr);
-      console.log("RDF Test Result:", rdfTestResult);
+      console.log("JS: Running Book Tests (AssemblyScript)");
+      const booksData = await getRDFData();
+      console.log("Initial Books Data:", booksData);
+      const booksDataPtr = writeStringToMemory(booksData);
+      const booksResultPtr = instance.exports.Rdf_Test(booksDataPtr);
+      const booksTestResult = readStringFromMemory(booksResultPtr);
+      console.log("Books Test Result:", booksTestResult);
 
-      const extractedRDFData = rdfTestResult.split(":")[1];
-      const updatedStore = await addRDFData(extractedRDFData);
-      console.log("Updated RDF Store:", updatedStore);
+      // Add a new book
+      console.log("JS: Adding a new book");
+      const newBookTitle = "New Book Title";
+      const newBookAuthor = "New Book Author";
+      const addBookPtr = writeStringToMemory(JSON.stringify({ title: newBookTitle, authorName: newBookAuthor }));
+      const addBookResultPtr = instance.exports.add_book(addBookPtr);
+      const addBookResult = readStringFromMemory(addBookResultPtr);
+      console.log("Add Book Result:", addBookResult);
+      await addBook(newBookTitle, newBookAuthor);
 
-      const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
-      console.log("Query Result:", queryResult);
+      // Delete a book
+      console.log("JS: Deleting a book");
+      const deleteBookPtr = writeStringToMemory("To Kill a Mockingbird");
+      const deleteBookResultPtr = instance.exports.delete_book(deleteBookPtr);
+      const deleteBookResult = readStringFromMemory(deleteBookResultPtr);
+      console.log("Delete Book Result:", deleteBookResult);
+      await deleteBook("To Kill a Mockingbird");
+
+      // Get a book
+      console.log("JS: Getting a book");
+      const getBookPtr = writeStringToMemory("1984");
+      const getBookResultPtr = instance.exports.get_book(getBookPtr);
+      const getBookResult = readStringFromMemory(getBookResultPtr);
+      console.log("Get Book Result:", getBookResult);
+      const apiGetBookResult = await getBook("1984");
+      console.log("API Get Book Result:", apiGetBookResult);
 
       apiServer.close();
     } else if (isTinyGo) {
@@ -456,23 +511,40 @@ async function executeWasmFile(filePath) {
         await callApiGetFromList(parseInt(getResult2))
       );
 
-      console.log("JS: Running RDF Test (TinyGo)");
-      const initialRDFData = await getRDFData();
-      console.log("Initial RDF Data:", initialRDFData);
-      const rdfDataMem = writeStringToMemoryTinyGo(initialRDFData);
-      const rdfResultPtr = instance.exports.Rdf_Test(
-        rdfDataMem.ptr,
-        rdfDataMem.length
-      );
-      const rdfTestResult = readStringFromMemoryTinyGo(rdfResultPtr);
-      console.log("RDF Test Result:", rdfTestResult);
+      console.log("JS: Running Book Tests (TinyGo)");
+      const booksData = await getRDFData();
+      console.log("Initial Books Data:", booksData);
+      const booksDataMem = writeStringToMemoryTinyGo(booksData);
+      const booksResultPtr = instance.exports.Rdf_Test(booksDataMem.ptr, booksDataMem.length);
+      const booksTestResult = readStringFromMemoryTinyGo(booksResultPtr);
+      console.log("Books Test Result:", booksTestResult);
 
-      const extractedRDFData = rdfTestResult.split(":")[1];
-      const updatedStore = await addRDFData(extractedRDFData);
-      console.log("Updated RDF Store:", updatedStore);
+      // Add a new book
+      console.log("JS: Adding a new book");
+      const newBookTitle = "New Book Title";
+      const newBookAuthor = "New Book Author";
+      const addBookMem = writeStringToMemoryTinyGo(JSON.stringify({ title: newBookTitle, authorName: newBookAuthor }));
+      const addBookResultPtr = instance.exports.add_book(addBookMem.ptr, addBookMem.length);
+      const addBookResult = readStringFromMemoryTinyGo(addBookResultPtr);
+      console.log("Add Book Result:", addBookResult);
+      await addBook(newBookTitle, newBookAuthor);
 
-      const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
-      console.log("Query Result:", queryResult);
+      // Delete a book
+      console.log("JS: Deleting a book");
+      const deleteBookMem = writeStringToMemoryTinyGo("To Kill a Mockingbird");
+      const deleteBookResultPtr = instance.exports.delete_book(deleteBookMem.ptr, deleteBookMem.length);
+      const deleteBookResult = readStringFromMemoryTinyGo(deleteBookResultPtr);
+      console.log("Delete Book Result:", deleteBookResult);
+      await deleteBook("To Kill a Mockingbird");
+
+      // Get a book
+      console.log("JS: Getting a book");
+      const getBookMem = writeStringToMemoryTinyGo("1984");
+      const getBookResultPtr = instance.exports.get_book(getBookMem.ptr, getBookMem.length);
+      const getBookResult = readStringFromMemoryTinyGo(getBookResultPtr);
+      console.log("Get Book Result:", getBookResult);
+      const apiGetBookResult = await getBook("1984");
+      console.log("API Get Book Result:", apiGetBookResult);
 
       apiServer.close();
     } else if (isRust) {
@@ -574,25 +646,45 @@ async function executeWasmFile(filePath) {
       instance.exports.dealloc(addItemMem2.ptr, addItemMem2.len);
       instance.exports.dealloc(getIndexMem2.ptr, getIndexMem2.len);
 
-      console.log("JS: Running RDF Test (Rust)");
-      const initialRDFData = await getRDFData();
-      console.log("Initial RDF Data:", initialRDFData);
-      const rdfDataMem = writeStringToMemoryRust(initialRDFData);
-      const rdfResultPtr = instance.exports.Rdf_Test(
-        rdfDataMem.ptr,
-        rdfDataMem.len
-      );
-      const rdfTestResult = readStringFromMemoryRust(rdfResultPtr);
-      console.log("RDF Test Result:", rdfTestResult);
+      console.log("JS: Running Book Tests (Rust)");
+      const booksData = await getRDFData();
+      console.log("Initial Books Data:", booksData);
+      const booksDataMem = writeStringToMemoryRust(booksData);
+      const booksResultPtr = instance.exports.Rdf_Test(booksDataMem.ptr, booksDataMem.len);
+      const booksTestResult = readStringFromMemoryRust(booksResultPtr);
+      console.log("Books Test Result:", booksTestResult);
 
-      const extractedRDFData = rdfTestResult.split(":")[1];
-      const updatedStore = await addRDFData(extractedRDFData);
-      console.log("Updated RDF Store:", updatedStore);
+      // Add a new book
+      console.log("JS: Adding a new book");
+      const newBookTitle = "New Book Title";
+      const newBookAuthor = "New Book Author";
+      const addBookMem = writeStringToMemoryRust(JSON.stringify({ title: newBookTitle, authorName: newBookAuthor }));
+      const addBookResultPtr = instance.exports.add_book(addBookMem.ptr, addBookMem.len);
+      const addBookResult = readStringFromMemoryRust(addBookResultPtr);
+      console.log("Add Book Result:", addBookResult);
+      await addBook(newBookTitle, newBookAuthor);
 
-      const queryResult = await queryRDFData("ex:subject ex:predicate ?object");
-      console.log("Query Result:", queryResult);
+      // Delete a book
+      console.log("JS: Deleting a book");
+      const deleteBookMem = writeStringToMemoryRust("To Kill a Mockingbird");
+      const deleteBookResultPtr = instance.exports.delete_book(deleteBookMem.ptr, deleteBookMem.len);
+      const deleteBookResult = readStringFromMemoryRust(deleteBookResultPtr);
+      console.log("Delete Book Result:", deleteBookResult);
+      await deleteBook("To Kill a Mockingbird");
 
-      instance.exports.dealloc(rdfDataMem.ptr, rdfDataMem.len);
+      // Get a book
+      console.log("JS: Getting a book");
+      const getBookMem = writeStringToMemoryRust("1984");
+      const getBookResultPtr = instance.exports.get_book(getBookMem.ptr, getBookMem.len);
+      const getBookResult = readStringFromMemoryRust(getBookResultPtr);
+      console.log("Get Book Result:", getBookResult);
+      const apiGetBookResult = await getBook("1984");
+      console.log("API Get Book Result:", apiGetBookResult);
+
+      instance.exports.dealloc(booksDataMem.ptr, booksDataMem.len);
+      instance.exports.dealloc(addBookMem.ptr, addBookMem.len);
+      instance.exports.dealloc(deleteBookMem.ptr, deleteBookMem.len);
+      instance.exports.dealloc(getBookMem.ptr, getBookMem.len);
 
       apiServer.close();
     }
