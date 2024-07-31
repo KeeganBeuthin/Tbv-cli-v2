@@ -2,6 +2,8 @@ const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require("axios");
+const { spawn } = require('child_process');
+
 
 let apiServer = null;
 
@@ -30,6 +32,31 @@ async function executeWasmFile(filePath) {
           );
           console.log("WASM:", message);
         },
+        query_rdf: (queryPtr, queryLen) => {
+          const query = readStringFromMemory(instance, queryPtr, queryLen);
+          console.log("Executing RDF query:", query);
+          
+          // Simulate an RDF query (replace this with actual RDF query logic)
+          const mockResult = JSON.stringify({ results: [{ balance: 1000 }] });
+          const resultPtr = writeStringToMemory(instance, mockResult);
+          return resultPtr;
+        },
+        get_result_row: (resultPtr) => {
+          const results = JSON.parse(readStringFromMemory(instance, resultPtr));
+          if (results.length > 0) {
+            const row = results.shift();
+            const rowStr = JSON.stringify(row);
+            const rowPtr = instance.exports.allocateString(rowStr.length);
+            writeStringToMemory(instance, rowStr, rowPtr);
+            return rowPtr;
+          }
+          return 0;
+        },
+        free_result: (resultPtr) => {
+          console.log("Freeing result at:", resultPtr);
+          // In a real implementation, you might want to properly deallocate memory
+        },
+
       },
       gojs: {
         "runtime.ticks": () => {},
@@ -116,7 +143,7 @@ async function executeWasmFile(filePath) {
     const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
-    function writeStringToMemory(str) {
+    function writeStringToMemory(instance, str) {
       console.log(`JS: Writing string "${str}" to memory`);
       const encoder = new TextEncoder();
       const encodedStr = encoder.encode(str);
@@ -126,17 +153,13 @@ async function executeWasmFile(filePath) {
       return ptr;
     }
 
-    function readStringFromMemory(ptr) {
-      console.log(`JS: Reading string from memory at ${ptr}`);
-      const len = instance.exports.getStringLen(ptr);
-      console.log(`JS: String length: ${len}`);
+    function readStringFromMemory(instance, ptr, len) {
+      console.log(`JS: Reading string from memory at ${ptr} with length ${len}`);
+      if (ptr === 0 || len === 0) {
+        console.log("JS: Received null or empty string");
+        return "";
+      }
       const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
-      console.log(
-        `JS: Raw bytes:`,
-        Array.from(buffer)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("")
-      );
       const str = new TextDecoder().decode(buffer);
       console.log(`JS: Read string: "${str}"`);
       return str;
@@ -234,15 +257,14 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
-    function writeStringToMemoryRust(str) {
-      console.log(`JS: Writing string "${str}" to memory (Rust)`);
+    function writeStringToMemory(instance, str) {
+      console.log(`JS: Writing string "${str}" to memory`);
       const encoder = new TextEncoder();
-      const bytes = encoder.encode(str);
-      const ptr = instance.exports.alloc(bytes.length);
-      const buffer = new Uint8Array(memory.buffer, ptr, bytes.length);
-      buffer.set(bytes);
+      const encodedStr = encoder.encode(str);
+      const ptr = instance.exports.allocateString(encodedStr.length);
+      new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
       console.log(`JS: Allocated string at ${ptr}`);
-      return { ptr, len: bytes.length };
+      return ptr;
     }
 
     function readStringFromMemoryRust(ptr) {
@@ -301,8 +323,9 @@ async function executeWasmFile(filePath) {
       }
     }
 
-    const amount = "745";
+    const amount = "100";
     const account = "1234567";
+
 
     let amountPtr,
       accountPtr,
@@ -311,79 +334,102 @@ async function executeWasmFile(filePath) {
       creditResult,
       debitResult;
 
+      async function makeTbvCliCall(action, data) {
+        return new Promise((resolve, reject) => {
+          console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
+          const child = spawn('node', ['index.js', action, data]);
+          
+          let output = '';
+          child.stdout.on('data', (data) => {
+            output += data.toString();
+            console.log(`TBV-CLI output: ${data}`);
+          });
+      
+          child.stderr.on('data', (data) => {
+            console.error(`TBV-CLI Error: ${data}`);
+          });
+      
+          child.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(`TBV-CLI process exited with code ${code}`));
+            } else {
+              try {
+                const resultStart = output.indexOf('RDF Query Result:');
+                if (resultStart !== -1) {
+                  const resultJson = output.slice(resultStart + 'RDF Query Result:'.length).trim();
+                  console.log(`Parsed TBV-CLI result: ${resultJson}`);
+                  resolve(resultJson);
+                } else {
+                  reject(new Error('Failed to find RDF Query Result in TBV-CLI output'));
+                }
+              } catch (error) {
+                reject(new Error('Failed to parse TBV-CLI output: ' + error.message));
+              }
+            }
+          });
+        });
+      }
+      
     if (isAssemblyScript) {
       // AssemblyScript logic
-      console.log("JS: Writing amount string to memory");
-      amountPtr = writeStringToMemory(amount);
-      console.log("JS: Writing account string to memory");
-      accountPtr = writeStringToMemory(account);
-
-      console.log("JS: Calling execute_credit_leg");
-      creditResultPtr = instance.exports.execute_credit_leg(
-        amountPtr,
-        accountPtr
-      );
-      console.log("JS: Reading credit result from memory");
-      creditResult = readStringFromMemory(creditResultPtr);
-      console.log("Result of execute_credit_leg:", creditResult);
-
+      const amountPtr = writeStringToMemory(instance, amount);
+      const accountPtr = writeStringToMemory(instance, account);
+    
+      const creditResultPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
+      const creditResult = readStringFromMemory(instance, creditResultPtr, instance.exports.getStringLen(creditResultPtr));
+      console.log("Initial credit leg result:", creditResult);
+    
+      // Wait for the RDF query to complete
+      await new Promise(resolve => setTimeout(resolve, 200));
+    
+      // Get the final credit result
+      const finalCreditResultPtr = instance.exports.process_credit_result(creditResultPtr, amountPtr, accountPtr);
+      const finalCreditResult = readStringFromMemory(instance, finalCreditResultPtr, instance.exports.getStringLen(finalCreditResultPtr));
+      console.log("Final credit leg result:", finalCreditResult);
+    
       console.log("JS: Calling execute_debit_leg");
-      debitResultPtr = instance.exports.execute_debit_leg(
-        amountPtr,
-        accountPtr
-      );
+      const debitResultPtr = instance.exports.execute_debit_leg(amountPtr, accountPtr);
       console.log("JS: Reading debit result from memory");
-      debitResult = readStringFromMemory(debitResultPtr);
+      const debitResult = readStringFromMemory(instance, debitResultPtr, instance.exports.getStringLen(debitResultPtr));
       console.log("Result of execute_debit_leg:", debitResult);
-
+    
       console.log("JS: Calling add_to_list");
-      const addItemPtr = writeStringToMemory("grape");
+      const addItemPtr = writeStringToMemory(instance, "grape");
       const addResultPtr = instance.exports.add_to_list(addItemPtr);
-      const addResult = readStringFromMemory(addResultPtr);
+      const addResult = readStringFromMemory(instance, addResultPtr, instance.exports.getStringLen(addResultPtr));
+      console.log("Result of add_to_list:", addResult);
       const sanitizedAddResult = sanitizeString(addResult);
       console.log(`JS: Sanitized add result: "${sanitizedAddResult}"`);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(sanitizedAddResult.split(":")[1])
-      );
+      await callApiAddToList(sanitizedAddResult.split(":")[1]);
 
       console.log("JS: Calling delete_from_list");
-      const deleteItemPtr = writeStringToMemory("banana");
+      const deleteItemPtr = writeStringToMemory(instance, "banana");
       const deleteResultPtr = instance.exports.delete_from_list(deleteItemPtr);
-      const deleteResult = readStringFromMemory(deleteResultPtr);
-      console.log(
-        "Result of delete_from_list:",
-        await callApiDeleteFromList(deleteResult.split(":")[1])
-      );
+      const deleteResult = readStringFromMemory(instance, deleteResultPtr, instance.exports.getStringLen(deleteResultPtr));
+      console.log("Result of delete_from_list:", deleteResult);
+      await callApiDeleteFromList(deleteResult.split(":")[1]);
 
       console.log("JS: Calling get_from_list");
-      const getIndexPtr = writeStringToMemory("1");
+      const getIndexPtr = writeStringToMemory(instance, "1");
       const getResultPtr = instance.exports.get_from_list(getIndexPtr);
-      const getResult = readStringFromMemory(getResultPtr);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult))
-      );
+      const getResult = readStringFromMemory(instance, getResultPtr, instance.exports.getStringLen(getResultPtr));
+      console.log("Result of get_from_list:", getResult);
+      await callApiGetFromList(parseInt(getResult));
 
       console.log("JS: Adding another item");
-      const addItemPtr2 = writeStringToMemory("kiwi");
+      const addItemPtr2 = writeStringToMemory(instance, "kiwi");
       const addResultPtr2 = instance.exports.add_to_list(addItemPtr2);
-      const addResult2 = readStringFromMemory(addResultPtr2);
+      const addResult2 = readStringFromMemory(instance, addResultPtr2, instance.exports.getStringLen(addResultPtr2));
       const sanitizedAddResult2 = sanitizeString(addResult2);
       console.log(`JS: Sanitized add result: "${sanitizedAddResult2}"`);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(sanitizedAddResult2.split(":")[1])
-      );
+      await callApiAddToList(sanitizedAddResult2.split(":")[1]);
 
       console.log("JS: Getting item at index 3");
-      const getIndexPtr2 = writeStringToMemory("3");
+      const getIndexPtr2 = writeStringToMemory(instance, "3");
       const getResultPtr2 = instance.exports.get_from_list(getIndexPtr2);
-      const getResult2 = readStringFromMemory(getResultPtr2);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult2))
-      );
+      const getResult2 = readStringFromMemory(instance, getResultPtr2, instance.exports.getStringLen(getResultPtr2));
+      console.log("Result of get_from_list:", getResult2);
+      await callApiGetFromList(parseInt(getResult2));
 
       console.log("JS: Running Book Tests (AssemblyScript)");
       const booksData = await getRDFData();

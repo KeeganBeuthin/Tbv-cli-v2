@@ -6,6 +6,7 @@ const fs = require("fs");
 const { generateDockerfile } = require("./conversion_dockerfile");
 const { spawn } = require("child_process");
 const { executeWasmFile, startApiServer } = require("./executeWasm");
+const { executeRdfQuery } = require('./rdfHandler');
 
 const program = new Command();
 
@@ -47,6 +48,18 @@ program
     }
   });
 
+  program
+  .command("rdf-query <query>")
+  .description("Execute an RDF query")
+  .action(async (query) => {
+    try {
+      const result = await executeRdfQuery(query);
+      console.log("RDF Query Result:", JSON.stringify(result));
+    } catch (error) {
+      console.error("Error executing RDF query:", error);
+    }
+  });
+  
 program.parse(process.argv);
 
 module.exports = { generateDockerfile, executeWasmFile };

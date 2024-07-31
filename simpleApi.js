@@ -12,6 +12,10 @@ let rdfStore = `
 ex:subject ex:predicate ex:object .
 `;
 
+let simulatedRdfStore = {
+  "1234567": { balance: 1000 }
+};
+
 let books = [
   {"title": "The Catcher in the Rye", "authorName": "J.D. Salinger"},
   {"title": "To Kill a Mockingbird", "authorName": "Harper Lee"},
@@ -100,6 +104,21 @@ app.get("/books/:title", (req, res) => {
 // Modify the existing /rdf endpoint to return books data
 app.get("/rdf", (req, res) => {
   res.json({ data: JSON.stringify(books) });
+});
+
+app.post("/rdf/query", (req, res) => {
+  const { query } = req.body;
+  console.log("Received RDF query:", query);
+  
+  // This is a very simplified RDF query parser
+  const match = query.match(/ex:(\w+)\s+ex:hasBalance\s+\?balance/);
+  if (match) {
+    const account = match[1];
+    const balance = simulatedRdfStore[account] ? simulatedRdfStore[account].balance : null;
+    res.json({ results: [{ balance: balance }] });
+  } else {
+    res.status(400).json({ error: "Invalid query" });
+  }
 });
 
 const server = app.listen(3000, () => {

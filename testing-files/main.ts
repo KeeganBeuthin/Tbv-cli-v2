@@ -8,6 +8,18 @@ declare function abort(message: string | null, fileName: string | null, lineNumb
 @external("env", "logMessage")
 declare function logMessage(ptr: usize, len: i32): void;
 
+// @ts-ignore
+@external("env", "query_rdf")
+declare function query_rdf(queryPtr: usize, queryLen: i32): usize;
+
+// @ts-ignore
+@external("env", "get_result_row")
+declare function get_result_row(resultPtr: usize): usize;
+
+// @ts-ignore
+@external("env", "free_result")
+declare function free_result(resultPtr: usize): void;
+
 class Book {
   title: string;
   authorName: string;
@@ -17,6 +29,41 @@ class Book {
     this.authorName = authorName;
   }
 }
+
+export function set_query_result(resultPtr: usize): void {
+  if (resultPtr === 0) {
+    consoleLog("Error executing RDF query");
+  } else {
+    const resultLen = getStringLen(resultPtr);
+    const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
+    consoleLog(`Query result: ${resultStr}`);
+  }
+}
+
+
+function parseBalance(jsonStr: string): f64 {
+  const balanceStart = jsonStr.indexOf('"balance":') + 10;
+  const balanceEnd = jsonStr.indexOf('}', balanceStart);
+  if (balanceStart === 9 || balanceEnd === -1) {
+    consoleLog("Error parsing balance: invalid JSON format");
+    return NaN;
+  }
+  const balanceStr = jsonStr.substring(balanceStart, balanceEnd);
+  return parseFloat(balanceStr);
+}
+
+function cleanBalanceString(balanceStr: string): string {
+  let result = "";
+  for (let i = 0; i < balanceStr.length; i++) {
+    const char = balanceStr.charAt(i);
+    if (char >= '0' && char <= '9' || char === '.') {
+      result += char;
+    }
+  }
+  return result;
+}
+
+
 
 
 function consoleLog(message: string): void {
@@ -90,15 +137,39 @@ export function Rdf_Test2(rdfDataPtr: usize): usize {
   return messagePtr;
 }
 
-export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
-  const amountLen = getStringLen(amountPtr);
-  const accountLen = getStringLen(accountPtr);
+
+export function process_credit_result(resultPtr: usize, amountPtr: usize, accountPtr: usize): usize {
+  const resultLen = getStringLen(resultPtr);
+  const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
+  consoleLog(`Query result: ${resultStr}`);
+
+  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, getStringLen(amountPtr))));
+  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, getStringLen(accountPtr))));
+
+  // Parse the balance from the result string
+  const balanceStart = resultStr.indexOf('"balance":') + 10;
+  const balanceEnd = resultStr.indexOf('}', balanceStart);
+  const balanceStr = resultStr.substring(balanceStart, balanceEnd);
   
-  const amountStr = readString(amountPtr, amountLen);
-  const accountStr = readString(accountPtr, accountLen);
-  
-  const message = `Crediting ${String.UTF8.decode(changetype<ArrayBuffer>(amountStr))} to account ${String.UTF8.decode(changetype<ArrayBuffer>(accountStr))}`;
-  consoleLog(`Created message: "${message}"`);
+  // Remove any non-numeric characters (except for the decimal point)
+  const cleanBalanceStr = cleanBalanceString(balanceStr);
+  const balance = parseFloat(cleanBalanceStr);
+
+  if (isNaN(balance)) {
+    consoleLog(`Error: Invalid balance value "${balanceStr}"`);
+    return 0;
+  }
+
+  const newBalance = balance + parseFloat(amount);
+
+  consoleLog(`Current balance: ${balance}, New balance: ${newBalance}`);
+
+  // Format the new balance to 2 decimal places
+  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
+
+  // Generate result message
+  const message = `Credited ${amount} to account ${account}. New balance: ${formattedNewBalance}`;
+  consoleLog(`Credit leg result: ${message}`);
   
   const messageEncoded = String.UTF8.encode(message);
   const messagePtr = allocateString(messageEncoded.byteLength);
@@ -107,14 +178,74 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   return messagePtr;
 }
 
+export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
+  const amountLen = getStringLen(amountPtr);
+  const accountLen = getStringLen(accountPtr);
+  
+  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, amountLen)));
+  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, accountLen)));
+  
+  consoleLog(`Executing credit leg for amount: ${amount}, account: ${account}`);
+
+  // Construct RDF query
+  const query = `
+    PREFIX ex: <http://example.org/>
+    SELECT ?balance
+    WHERE {
+      ex:${account} ex:hasBalance ?balance .
+    }
+  `;
+
+  // Call RDF SDK to execute query
+  const queryEncoded = String.UTF8.encode(query);
+  const queryPtr = allocateString(queryEncoded.byteLength);
+  writeString(queryPtr, changetype<usize>(queryEncoded), queryEncoded.byteLength);
+  const resultPtr = query_rdf(queryPtr, queryEncoded.byteLength);
+
+  // Process the result
+  if (resultPtr === 0) {
+    consoleLog("Error executing RDF query");
+    return 0;
+  }
+
+  const resultLen = getStringLen(resultPtr);
+  const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
+  consoleLog(`Query result: ${resultStr}`);
+
+  // Parse the balance from the result string
+  const balance = parseBalance(resultStr);
+  if (isNaN(balance)) {
+    consoleLog(`Error: Invalid balance value "${resultStr}"`);
+    return 0;
+  }
+
+  const newBalance = balance + parseFloat(amount);
+  consoleLog(`Current balance: ${balance}, New balance: ${newBalance}`);
+
+  // Format the new balance to 2 decimal places
+  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
+
+  // Generate result message
+  const message = `Credited ${amount} to account ${account}. New balance: ${formattedNewBalance}`;
+  consoleLog(`Credit leg result: ${message}`);
+  
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  
+  return messagePtr;
+}
+
+
+
 export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
   const amountLen = getStringLen(amountPtr);
   const accountLen = getStringLen(accountPtr);
   
-  const amountStr = readString(amountPtr, amountLen);
-  const accountStr = readString(accountPtr, accountLen);
+  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, amountLen)));
+  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, accountLen)));
   
-  const message = `Debiting ${String.UTF8.decode(changetype<ArrayBuffer>(amountStr))} from account ${String.UTF8.decode(changetype<ArrayBuffer>(accountStr))}`;
+  const message = `Debiting ${amount} from account ${account}`;
   consoleLog(`Created message: "${message}"`);
   
   const messageEncoded = String.UTF8.encode(message);
@@ -128,8 +259,9 @@ export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
 
 export function add_to_list(itemPtr: usize): usize {
   const itemLen = getStringLen(itemPtr);
-  const item = readString(itemPtr, itemLen);
-  const message = `add:${String.UTF8.decode(changetype<ArrayBuffer>(item))}`;
+  const item = String.UTF8.decode(changetype<ArrayBuffer>(readString(itemPtr, itemLen)));
+  const message = `add:${item}`;
+  consoleLog(`Add to list: ${message}`);
   const messageEncoded = String.UTF8.encode(message);
   const messagePtr = allocateString(messageEncoded.byteLength);
   writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
@@ -148,8 +280,9 @@ export function delete_from_list(itemPtr: usize): usize {
 
 export function get_from_list(indexPtr: usize): usize {
   const indexLen = getStringLen(indexPtr);
-  const index = readString(indexPtr, indexLen);
-  const message = `${String.UTF8.decode(changetype<ArrayBuffer>(index))}`;
+  const index = String.UTF8.decode(changetype<ArrayBuffer>(readString(indexPtr, indexLen)));
+  const message = index;
+  consoleLog(`Get from list: ${message}`);
   const messageEncoded = String.UTF8.encode(message);
   const messagePtr = allocateString(messageEncoded.byteLength);
   writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
