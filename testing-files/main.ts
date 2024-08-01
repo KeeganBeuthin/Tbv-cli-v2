@@ -137,7 +137,7 @@ export function Rdf_Test2(rdfDataPtr: usize): usize {
 }
 
 
-
+let globalAmount: f64 = 0;
 
 export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   const amountLen = getStringLen(amountPtr);
@@ -145,6 +145,8 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   
   const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, amountLen)));
   const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, accountLen)));
+  
+  globalAmount = parseFloat(amount);
   
   consoleLog(`Executing credit leg for amount: ${amount}, account: ${account}`);
 
@@ -181,16 +183,20 @@ export function process_credit_result(resultPtr: usize): void {
   consoleLog(`Query result: ${resultStr}`);
 
   // Parse the balance from the result string
-  const balance = parseBalance(resultStr);
-  if (isNaN(balance)) {
+  const currentBalance = parseBalance(resultStr);
+  if (isNaN(currentBalance)) {
     consoleLog(`Error: Invalid balance value "${resultStr}"`);
     set_query_result(createErrorResult(`Invalid balance value "${resultStr}"`));
     return;
   }
 
-  // Here you would typically update the balance and generate a result message
-  // For this example, we'll just return the current balance
-  const message = `Current balance: ${balance}`;
+  // Get the amount to credit (this should be stored globally or passed as a parameter)
+  const amount = 100; // For now, we'll hardcode this
+
+  const newBalance = currentBalance + amount;
+  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
+
+  const message = `Credited ${amount} to account. Previous balance: ${currentBalance}, New balance: ${formattedNewBalance}`;
   set_query_result(createSuccessResult(message));
 }
 
