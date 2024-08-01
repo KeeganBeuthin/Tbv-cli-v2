@@ -41,6 +41,26 @@ async function executeWasmFile(filePath) {
           const resultPtr = writeStringToMemory(instance, mockResult);
           return resultPtr;
         },
+        query_rdf_tbv_cli: async (queryPtr, queryLen, callbackPtr) => {
+          const query = readStringFromMemory(instance, queryPtr, queryLen);
+          console.log("Executing RDF query via TBV-CLI:", query);
+          
+          try {
+            const result = await makeTbvCliCall('rdf-query', query);
+            console.log("TBV-CLI result:", result);
+            const resultPtr = writeStringToMemory(instance, result);
+            instance.exports.process_credit_result(resultPtr);
+          } catch (error) {
+            console.error("Error executing RDF query via TBV-CLI:", error);
+            instance.exports.process_credit_result(0);
+          }
+        },
+        
+        set_query_result: (resultPtr) => {
+          const result = readStringFromMemory(instance, resultPtr, instance.exports.getStringLen(resultPtr));
+          console.log("Credit leg result:", result);
+        },
+
         query_rdf_go: (queryPtr, queryLen) => {
           const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
           console.log("Executing RDF query (Go):", query);
@@ -139,6 +159,42 @@ async function executeWasmFile(filePath) {
         sock_shutdown: () => {},
       },
     };
+
+    async function makeTbvCliCall(action, data) {
+      return new Promise((resolve, reject) => {
+        console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
+        const child = spawn('node', ['index.js', action, data]);
+        
+        let output = '';
+        child.stdout.on('data', (data) => {
+          output += data.toString();
+          console.log(`TBV-CLI output: ${data}`);
+        });
+    
+        child.stderr.on('data', (data) => {
+          console.error(`TBV-CLI Error: ${data}`);
+        });
+    
+        child.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`TBV-CLI process exited with code ${code}`));
+          } else {
+            try {
+              const resultStart = output.indexOf('RDF Query Result:');
+              if (resultStart !== -1) {
+                const resultJson = output.slice(resultStart + 'RDF Query Result:'.length).trim();
+                console.log(`Parsed TBV-CLI result: ${resultJson}`);
+                resolve(resultJson);
+              } else {
+                reject(new Error('Failed to find RDF Query Result in TBV-CLI output'));
+              }
+            } catch (error) {
+              reject(new Error('Failed to parse TBV-CLI output: ' + error.message));
+            }
+          }
+        });
+      });
+    }
 
     const { instance } = await WebAssembly.instantiate(
       wasmBuffer,
@@ -347,58 +403,14 @@ async function executeWasmFile(filePath) {
       creditResult,
       debitResult;
 
-      async function makeTbvCliCall(action, data) {
-        return new Promise((resolve, reject) => {
-          console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
-          const child = spawn('node', ['index.js', action, data]);
-          
-          let output = '';
-          child.stdout.on('data', (data) => {
-            output += data.toString();
-            console.log(`TBV-CLI output: ${data}`);
-          });
-      
-          child.stderr.on('data', (data) => {
-            console.error(`TBV-CLI Error: ${data}`);
-          });
-      
-          child.on('close', (code) => {
-            if (code !== 0) {
-              reject(new Error(`TBV-CLI process exited with code ${code}`));
-            } else {
-              try {
-                const resultStart = output.indexOf('RDF Query Result:');
-                if (resultStart !== -1) {
-                  const resultJson = output.slice(resultStart + 'RDF Query Result:'.length).trim();
-                  console.log(`Parsed TBV-CLI result: ${resultJson}`);
-                  resolve(resultJson);
-                } else {
-                  reject(new Error('Failed to find RDF Query Result in TBV-CLI output'));
-                }
-              } catch (error) {
-                reject(new Error('Failed to parse TBV-CLI output: ' + error.message));
-              }
-            }
-          });
-        });
-      }
       
     if (isAssemblyScript) {
       // AssemblyScript logic
       const amountPtr = writeStringToMemory(instance, amount);
       const accountPtr = writeStringToMemory(instance, account);
     
-      const creditResultPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
-      const creditResult = readStringFromMemory(instance, creditResultPtr, instance.exports.getStringLen(creditResultPtr));
-      console.log("Initial credit leg result:", creditResult);
-    
-      // Wait for the RDF query to complete
-      await new Promise(resolve => setTimeout(resolve, 200));
-    
-      // Get the final credit result
-      const finalCreditResultPtr = instance.exports.process_credit_result(creditResultPtr, amountPtr, accountPtr);
-      const finalCreditResult = readStringFromMemory(instance, finalCreditResultPtr, instance.exports.getStringLen(finalCreditResultPtr));
-      console.log("Final credit leg result:", finalCreditResult);
+      console.log("JS: Calling execute_credit_leg");
+      instance.exports.execute_credit_leg(amountPtr, accountPtr);
     
       console.log("JS: Calling execute_debit_leg");
       const debitResultPtr = instance.exports.execute_debit_leg(amountPtr, accountPtr);

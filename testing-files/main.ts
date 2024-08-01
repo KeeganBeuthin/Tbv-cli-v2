@@ -9,8 +9,8 @@ declare function abort(message: string | null, fileName: string | null, lineNumb
 declare function logMessage(ptr: usize, len: i32): void;
 
 // @ts-ignore
-@external("env", "query_rdf")
-declare function query_rdf(queryPtr: usize, queryLen: i32): usize;
+@external("env", "query_rdf_tbv_cli")
+declare function query_rdf_tbv_cli(queryPtr: usize, queryLen: i32, callbackPtr: usize): void;
 
 // @ts-ignore
 @external("env", "get_result_row")
@@ -19,6 +19,13 @@ declare function get_result_row(resultPtr: usize): usize;
 // @ts-ignore
 @external("env", "free_result")
 declare function free_result(resultPtr: usize): void;
+
+// @ts-ignore
+@external("env", "set_query_result")
+declare function set_query_result(resultPtr: usize): void;
+
+
+
 
 class Book {
   title: string;
@@ -30,15 +37,7 @@ class Book {
   }
 }
 
-export function set_query_result(resultPtr: usize): void {
-  if (resultPtr === 0) {
-    consoleLog("Error executing RDF query");
-  } else {
-    const resultLen = getStringLen(resultPtr);
-    const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
-    consoleLog(`Query result: ${resultStr}`);
-  }
-}
+
 
 
 function parseBalance(jsonStr: string): f64 {
@@ -138,45 +137,7 @@ export function Rdf_Test2(rdfDataPtr: usize): usize {
 }
 
 
-export function process_credit_result(resultPtr: usize, amountPtr: usize, accountPtr: usize): usize {
-  const resultLen = getStringLen(resultPtr);
-  const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
-  consoleLog(`Query result: ${resultStr}`);
 
-  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, getStringLen(amountPtr))));
-  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, getStringLen(accountPtr))));
-
-  // Parse the balance from the result string
-  const balanceStart = resultStr.indexOf('"balance":') + 10;
-  const balanceEnd = resultStr.indexOf('}', balanceStart);
-  const balanceStr = resultStr.substring(balanceStart, balanceEnd);
-  
-  // Remove any non-numeric characters (except for the decimal point)
-  const cleanBalanceStr = cleanBalanceString(balanceStr);
-  const balance = parseFloat(cleanBalanceStr);
-
-  if (isNaN(balance)) {
-    consoleLog(`Error: Invalid balance value "${balanceStr}"`);
-    return 0;
-  }
-
-  const newBalance = balance + parseFloat(amount);
-
-  consoleLog(`Current balance: ${balance}, New balance: ${newBalance}`);
-
-  // Format the new balance to 2 decimal places
-  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
-
-  // Generate result message
-  const message = `Credited ${amount} to account ${account}. New balance: ${formattedNewBalance}`;
-  consoleLog(`Credit leg result: ${message}`);
-  
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  
-  return messagePtr;
-}
 
 export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   const amountLen = getStringLen(amountPtr);
@@ -196,16 +157,23 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
     }
   `;
 
-  // Call RDF SDK to execute query
+  // Call RDF SDK to execute query using tbv-cli
   const queryEncoded = String.UTF8.encode(query);
   const queryPtr = allocateString(queryEncoded.byteLength);
   writeString(queryPtr, changetype<usize>(queryEncoded), queryEncoded.byteLength);
-  const resultPtr = query_rdf(queryPtr, queryEncoded.byteLength);
+  
+  // Use a callback function to handle the query result
+  query_rdf_tbv_cli(queryPtr, queryEncoded.byteLength, changetype<usize>(process_credit_result));
 
-  // Process the result
+  // Return a placeholder value
+  return allocateString(0);
+}
+
+export function process_credit_result(resultPtr: usize): void {
   if (resultPtr === 0) {
     consoleLog("Error executing RDF query");
-    return 0;
+    set_query_result(createErrorResult("Error executing RDF query"));
+    return;
   }
 
   const resultLen = getStringLen(resultPtr);
@@ -216,26 +184,30 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   const balance = parseBalance(resultStr);
   if (isNaN(balance)) {
     consoleLog(`Error: Invalid balance value "${resultStr}"`);
-    return 0;
+    set_query_result(createErrorResult(`Invalid balance value "${resultStr}"`));
+    return;
   }
 
-  const newBalance = balance + parseFloat(amount);
-  consoleLog(`Current balance: ${balance}, New balance: ${newBalance}`);
+  // Here you would typically update the balance and generate a result message
+  // For this example, we'll just return the current balance
+  const message = `Current balance: ${balance}`;
+  set_query_result(createSuccessResult(message));
+}
 
-  // Format the new balance to 2 decimal places
-  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
-
-  // Generate result message
-  const message = `Credited ${amount} to account ${account}. New balance: ${formattedNewBalance}`;
-  consoleLog(`Credit leg result: ${message}`);
-  
-  const messageEncoded = String.UTF8.encode(message);
+function createErrorResult(message: string): usize {
+  const errorMessage = `Error: ${message}`;
+  const messageEncoded = String.UTF8.encode(errorMessage);
   const messagePtr = allocateString(messageEncoded.byteLength);
   writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  
   return messagePtr;
 }
 
+function createSuccessResult(message: string): usize {
+  const messageEncoded = String.UTF8.encode(message);
+  const messagePtr = allocateString(messageEncoded.byteLength);
+  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  return messagePtr;
+}
 
 
 export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
