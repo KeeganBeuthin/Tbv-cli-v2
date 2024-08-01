@@ -3,18 +3,125 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"unsafe"
 )
+
+type QueryResult struct {
+	Results []struct {
+		Balance json.Number `json:"balance"`
+	} `json:"results"`
+}
 
 //export TinyGo
 func TinyGo() {}
 
 //export execute_credit_leg
-func execute_credit_leg(amountPtr *byte, amountLen int, accountPtr *byte, accountLen int) *byte {
+func execute_credit_leg(amountPtr *byte, amountLen int32, accountPtr *byte, accountLen int32) *byte {
 	amount := string(unsafe.Slice(amountPtr, amountLen))
 	account := string(unsafe.Slice(accountPtr, accountLen))
-	message := fmt.Sprintf("Crediting %s to account %s", amount, account)
-	return &([]byte(message)[0])
+
+	fmt.Printf("Executing credit leg for amount: %s, account: %s\n", amount, account)
+
+	// Construct RDF query
+	query := fmt.Sprintf(`
+        PREFIX ex: <http://example.org/>
+        SELECT ?balance
+        WHERE {
+            ex:%s ex:hasBalance ?balance .
+        }
+    `, account)
+
+	// Call RDF SDK to execute query
+	queryBytes := []byte(query)
+	resultPtr := query_rdf_go(&queryBytes[0], int32(len(queryBytes)))
+	if resultPtr == nil {
+		errorMsg := "Error executing RDF query"
+		fmt.Println(errorMsg)
+		return stringToPtr(errorMsg)
+	}
+
+	resultStr := readCString(resultPtr)
+	fmt.Printf("Query result: %s\n", resultStr)
+
+	// Parse the balance from the result string
+	balance, err := parseBalance(resultStr)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Error: %v", err)
+		fmt.Println(errorMsg)
+		return stringToPtr(errorMsg)
+	}
+
+	amountFloat, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Error: Invalid amount value \"%s\"", amount)
+		fmt.Println(errorMsg)
+		return stringToPtr(errorMsg)
+	}
+
+	newBalance := balance + amountFloat
+	fmt.Printf("Current balance: %.2f, New balance: %.2f\n", balance, newBalance)
+
+	// Format the new balance to 2 decimal places
+	formattedNewBalance := fmt.Sprintf("%.2f", newBalance)
+
+	// Generate result message
+	message := fmt.Sprintf("Credited %s to account %s. New balance: %s", amount, account, formattedNewBalance)
+	fmt.Printf("Credit leg result: %s\n", message)
+
+	return stringToPtr(message)
+}
+
+//go:wasm-module env
+//export query_rdf_go
+func query_rdf_go(queryPtr *byte, queryLen int32) *byte
+
+func readCString(ptr *byte) string {
+	if ptr == nil {
+		return ""
+	}
+	var bytes []byte
+	for {
+		b := *ptr
+		if b == 0 {
+			break
+		}
+		bytes = append(bytes, b)
+		ptr = (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(ptr)) + 1))
+	}
+	return string(bytes)
+}
+
+//export malloc
+func malloc(size int32) unsafe.Pointer
+
+func stringToPtr(s string) *byte {
+	ptr := malloc(int32(len(s) + 1))
+	if ptr == nil {
+		fmt.Println("Error: Failed to allocate memory")
+		return nil
+	}
+	copy(unsafe.Slice((*byte)(ptr), len(s)+1), append([]byte(s), 0))
+	return (*byte)(ptr)
+}
+
+func parseBalance(resultStr string) (float64, error) {
+	var queryResult QueryResult
+	err := json.Unmarshal([]byte(resultStr), &queryResult)
+	if err != nil {
+		return 0, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+
+	if len(queryResult.Results) == 0 {
+		return 0, fmt.Errorf("No results found in the query response")
+	}
+
+	balance, err := queryResult.Results[0].Balance.Float64()
+	if err != nil {
+		return 0, fmt.Errorf("Error parsing balance: %v", err)
+	}
+
+	return balance, nil
 }
 
 //export execute_debit_leg

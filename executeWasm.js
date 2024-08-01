@@ -41,6 +41,15 @@ async function executeWasmFile(filePath) {
           const resultPtr = writeStringToMemory(instance, mockResult);
           return resultPtr;
         },
+        query_rdf_go: (queryPtr, queryLen) => {
+          const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
+          console.log("Executing RDF query (Go):", query);
+          
+          // Simulate an RDF query (replace this with actual RDF query logic)
+          const mockResult = JSON.stringify({ results: [{ balance: 1000 }] });
+          const resultMem = writeStringToMemoryTinyGo(mockResult);
+          return resultMem.ptr;
+        },
         get_result_row: (resultPtr) => {
           const results = JSON.parse(readStringFromMemory(instance, resultPtr));
           if (results.length > 0) {
@@ -241,16 +250,20 @@ async function executeWasmFile(filePath) {
     function writeStringToMemoryTinyGo(str) {
       console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
       const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str);
+      const encodedStr = encoder.encode(str + '\0'); // Add null terminator
       const ptr = instance.exports.malloc(encodedStr.length);
       new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
       console.log(`JS: Allocated string at ${ptr}`);
-      return { ptr, length: encodedStr.length };
+      return { ptr, length: encodedStr.length - 1 }; // Subtract 1 to exclude null terminator
     }
 
     function readStringFromMemoryTinyGo(ptr) {
       console.log(`JS: Reading string from memory at ${ptr} (TinyGo)`);
-      const len = instance.exports.getStringLength(ptr);
+      let len = 0;
+      const view = new Uint8Array(instance.exports.memory.buffer);
+      while (view[ptr + len] !== 0) {
+        len++;
+      }
       const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
       const str = new TextDecoder().decode(buffer);
       console.log(`JS: Read string: "${str}"`);
@@ -473,7 +486,18 @@ async function executeWasmFile(filePath) {
       const amountMem = writeStringToMemoryTinyGo(amount);
       console.log("JS: Writing account string to memory (TinyGo)");
       const accountMem = writeStringToMemoryTinyGo(account);
-
+    
+      // Modify the importObject to include a mock query_rdf_go function
+      importObject.env.query_rdf_go = (queryPtr, queryLen) => {
+        const query = readStringFromMemoryTinyGo(queryPtr);
+        console.log("Executing RDF query (Go):", query);
+        
+        // Simulate an RDF query (replace this with actual RDF query logic)
+        const mockResult = JSON.stringify({ results: [{ balance: 1000 }] });
+        const resultMem = writeStringToMemoryTinyGo(mockResult);
+        return resultMem.ptr;
+      };
+    
       console.log("JS: Calling execute_credit_leg (TinyGo)");
       creditResultPtr = instance.exports.execute_credit_leg(
         amountMem.ptr,
@@ -481,10 +505,21 @@ async function executeWasmFile(filePath) {
         accountMem.ptr,
         accountMem.length
       );
-      console.log("JS: Reading credit result from memory (TinyGo)");
-      creditResult = readStringFromMemoryTinyGo(creditResultPtr);
-      console.log("Result of execute_credit_leg:", creditResult);
-
+      
+      if (creditResultPtr === 0) {
+        console.error("Error: execute_credit_leg returned null pointer");
+      } else {
+        console.log("JS: Reading credit result from memory (TinyGo)");
+        creditResult = readStringFromMemoryTinyGo(creditResultPtr);
+        console.log("Result of execute_credit_leg:", creditResult);
+      
+        if (creditResult.startsWith("Error:")) {
+          console.error("Error in execute_credit_leg:", creditResult);
+        } else {
+          console.log("Credit operation successful:", creditResult);
+        }
+      }
+    
       console.log("JS: Calling execute_debit_leg (TinyGo)");
       debitResultPtr = instance.exports.execute_debit_leg(
         amountMem.ptr,
