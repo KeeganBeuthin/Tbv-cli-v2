@@ -10,7 +10,7 @@ declare function logMessage(ptr: usize, len: i32): void;
 
 // @ts-ignore
 @external("env", "query_rdf_tbv_cli")
-declare function query_rdf_tbv_cli(queryPtr: usize, queryLen: i32, callbackPtr: usize): void;
+declare function query_rdf_tbv_cli(queryPtr: usize, queryLen: i32): usize;
 
 // @ts-ignore
 @external("env", "get_result_row")
@@ -164,18 +164,23 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
   const queryPtr = allocateString(queryEncoded.byteLength);
   writeString(queryPtr, changetype<usize>(queryEncoded), queryEncoded.byteLength);
   
-  // Use a callback function to handle the query result
-  query_rdf_tbv_cli(queryPtr, queryEncoded.byteLength, changetype<usize>(process_credit_result));
+  // Make the call to RDF SDK
+  const resultPtr = query_rdf_tbv_cli(queryPtr, queryEncoded.byteLength);
 
-  // Return a placeholder value
-  return allocateString(0);
+  // Check if the query was successful
+  if (resultPtr == 0) {
+    return createErrorResult("Error executing RDF query");
+  }
+
+  // Process the result
+  return process_credit_result(resultPtr);
 }
 
-export function process_credit_result(resultPtr: usize): void {
+
+export function process_credit_result(resultPtr: usize): usize {
   if (resultPtr === 0) {
     consoleLog("Error executing RDF query");
-    set_query_result(createErrorResult("Error executing RDF query"));
-    return;
+    return createErrorResult("Error executing RDF query");
   }
 
   const resultLen = getStringLen(resultPtr);
@@ -186,18 +191,14 @@ export function process_credit_result(resultPtr: usize): void {
   const currentBalance = parseBalance(resultStr);
   if (isNaN(currentBalance)) {
     consoleLog(`Error: Invalid balance value "${resultStr}"`);
-    set_query_result(createErrorResult(`Invalid balance value "${resultStr}"`));
-    return;
+    return createErrorResult(`Invalid balance value "${resultStr}"`);
   }
 
-  // Get the amount to credit (this should be stored globally or passed as a parameter)
-  const amount = 100; // For now, we'll hardcode this
-
-  const newBalance = currentBalance + amount;
+  const newBalance = currentBalance + globalAmount;
   const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
 
-  const message = `Credited ${amount} to account. Previous balance: ${currentBalance}, New balance: ${formattedNewBalance}`;
-  set_query_result(createSuccessResult(message));
+  const message = `Credited ${globalAmount} to account. Previous balance: ${currentBalance}, New balance: ${formattedNewBalance}`;
+  return createSuccessResult(message);
 }
 
 function createErrorResult(message: string): usize {

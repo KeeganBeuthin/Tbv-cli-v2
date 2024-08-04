@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"unsafe"
 )
 
@@ -13,6 +14,8 @@ type QueryResult struct {
 	} `json:"results"`
 }
 
+var globalAmount float64
+
 //export TinyGo
 func TinyGo() {}
 
@@ -21,9 +24,16 @@ func execute_credit_leg(amountPtr *byte, amountLen int32, accountPtr *byte, acco
 	amount := string(unsafe.Slice(amountPtr, amountLen))
 	account := string(unsafe.Slice(accountPtr, accountLen))
 
+	amountFloat, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Error: Invalid amount value \"%s\"", amount)
+		fmt.Println(errorMsg)
+		return stringToPtr(errorMsg)
+	}
+	globalAmount = amountFloat
+
 	fmt.Printf("Executing credit leg for amount: %s, account: %s\n", amount, account)
 
-	// Construct RDF query
 	query := fmt.Sprintf(`
         PREFIX ex: <http://example.org/>
         SELECT ?balance
@@ -32,9 +42,27 @@ func execute_credit_leg(amountPtr *byte, amountLen int32, accountPtr *byte, acco
         }
     `, account)
 
-	// Call RDF SDK to execute query
 	queryBytes := []byte(query)
-	resultPtr := query_rdf_go(&queryBytes[0], int32(len(queryBytes)))
+	resultPtr := query_rdf_tbv_cli(&queryBytes[0], int32(len(queryBytes)))
+	if resultPtr == nil {
+		errorMsg := "Error: RDF query failed"
+		fmt.Println(errorMsg)
+		return stringToPtr(errorMsg)
+	}
+	resultStr := readCString(resultPtr)
+	if strings.HasPrefix(resultStr, "Error:") {
+		return stringToPtr(resultStr)
+	}
+
+	return process_credit_result(resultPtr)
+}
+
+//go:wasm-module env
+//export query_rdf_tbv_cli
+func query_rdf_tbv_cli(queryPtr *byte, queryLen int32) *byte
+
+//export process_credit_result
+func process_credit_result(resultPtr *byte) *byte {
 	if resultPtr == nil {
 		errorMsg := "Error executing RDF query"
 		fmt.Println(errorMsg)
@@ -44,37 +72,34 @@ func execute_credit_leg(amountPtr *byte, amountLen int32, accountPtr *byte, acco
 	resultStr := readCString(resultPtr)
 	fmt.Printf("Query result: %s\n", resultStr)
 
-	// Parse the balance from the result string
-	balance, err := parseBalance(resultStr)
+	currentBalance, err := parseBalance(resultStr)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Error: %v", err)
 		fmt.Println(errorMsg)
 		return stringToPtr(errorMsg)
 	}
 
-	amountFloat, err := strconv.ParseFloat(amount, 64)
-	if err != nil {
-		errorMsg := fmt.Sprintf("Error: Invalid amount value \"%s\"", amount)
-		fmt.Println(errorMsg)
-		return stringToPtr(errorMsg)
-	}
-
-	newBalance := balance + amountFloat
-	fmt.Printf("Current balance: %.2f, New balance: %.2f\n", balance, newBalance)
-
-	// Format the new balance to 2 decimal places
+	newBalance := currentBalance + globalAmount
 	formattedNewBalance := fmt.Sprintf("%.2f", newBalance)
 
-	// Generate result message
-	message := fmt.Sprintf("Credited %s to account %s. New balance: %s", amount, account, formattedNewBalance)
+	message := fmt.Sprintf("Credited %.2f to account. Previous balance: %.2f, New balance: %s", globalAmount, currentBalance, formattedNewBalance)
 	fmt.Printf("Credit leg result: %s\n", message)
 
 	return stringToPtr(message)
 }
 
 //go:wasm-module env
-//export query_rdf_go
-func query_rdf_go(queryPtr *byte, queryLen int32) *byte
+//export set_query_result
+func set_query_result(resultPtr *byte)
+
+func query_rdf_tbv_cli_wrapper(queryPtr *byte, queryLen int32) *byte {
+	result := query_rdf_tbv_cli(queryPtr, queryLen)
+	if result == nil {
+		fmt.Println("Error: query_rdf_tbv_cli returned nil")
+		return stringToPtr("Error: RDF query failed")
+	}
+	return result
+}
 
 func readCString(ptr *byte) string {
 	if ptr == nil {
