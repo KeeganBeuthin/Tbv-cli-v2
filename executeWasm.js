@@ -131,6 +131,13 @@ async function executeWasmFile(filePath) {
           console.log("Freeing result at:", resultPtr);
           // In a real implementation, you might want to properly deallocate memory
         },
+        log_message: (ptr, len) => {
+          const memory = new Uint8Array(instance.exports.memory.buffer);
+          const message = new TextDecoder().decode(
+            memory.subarray(ptr, ptr + len)
+          );
+          console.log("Rust log:", message);
+        },
       },
       gojs: {
         "runtime.ticks": () => {},
@@ -252,6 +259,7 @@ async function executeWasmFile(filePath) {
       wasmBuffer,
       importObject
     );
+    console.log('Available exports:', Object.keys(instance.exports));
     const { memory } = instance.exports;
 
     console.log(`Initial memory size: ${memory.buffer.byteLength} bytes`);
@@ -327,6 +335,41 @@ async function executeWasmFile(filePath) {
       const str = new TextDecoder().decode(buffer);
       console.log(`JS: Read string: "${str}"`);
       return str;
+    }
+
+    function writeStringToMemoryRust(instance, str) {
+
+      console.log('Writing to Rust memory:', str);
+      console.log('Instance:', instance);
+      console.log('Instance exports:', instance.exports);
+      console.log('Alloc function:', instance.exports.alloc);
+      if (!instance || !instance.exports) {
+        console.error('Error: WebAssembly instance not available');
+        return null;
+      }
+      if (typeof instance.exports.alloc !== 'function') {
+        console.error('Error: alloc function not available in exports');
+        console.log('Available exports:', Object.keys(instance.exports));
+        return null;
+      }
+    
+      const encoder = new TextEncoder();
+      const encodedStr = encoder.encode(str + '\0'); // Null-terminated string
+      const len = encodedStr.length;
+    
+      // Allocate memory in the Rust-compiled WebAssembly module
+      const ptr = instance.exports.alloc(len);
+    
+      // Write the string to the allocated memory
+      const memory = new Uint8Array(instance.exports.memory.buffer);
+      for (let i = 0; i < len; i++) {
+        memory[ptr + i] = encodedStr[i];
+      }
+    
+      console.log(`JS: Wrote string "${str}" to Rust memory at address ${ptr} with length ${len}`);
+    
+      // Return both the pointer and the length, which is useful for Rust FFI
+      return { ptr, len: len - 1 }; // Subtract 1 to not count null terminator in length
     }
 
     async function makeTbvCliCallSync(action, data) {
@@ -490,22 +533,56 @@ async function executeWasmFile(filePath) {
       const debitResult = readStringFromMemory(instance, debitResultPtr, 1000);
       console.log("Result of execute_debit_leg:", debitResult);
     } else if (isRust) {
-      // Rust logic
-      console.log("JS: Writing amount string to memory (Rust)");
-      const amountMem = writeStringToMemoryRust(amount);
-      console.log("JS: Writing account string to memory (Rust)");
-      const accountMem = writeStringToMemoryRust(account);
+  // Rust logic
 
-      console.log("JS: Calling execute_credit_leg (Rust)");
-      creditResultPtr = instance.exports.execute_credit_leg(
-        amountMem.ptr,
-        amountMem.len,
-        accountMem.ptr,
-        accountMem.len
-      );
-      console.log("JS: Reading credit result from memory (Rust)");
-      creditResult = readStringFromMemoryRust(creditResultPtr);
-      console.log("Result of execute_credit_leg:", creditResult);
+  const isRust = typeof instance.exports.alloc === "function";
+console.log("Is Rust:", isRust);
+
+ try {
+    const ptr = instance.exports.alloc(10);
+    console.log("Successfully called alloc function. Returned pointer:", ptr);
+  } catch (error) {
+    console.error("Error calling alloc function:", error);
+  }
+
+  console.log("JS: Writing amount string to memory (Rust)");
+  const amountMem = writeStringToMemoryRust(instance, amount);
+  console.log("JS: Writing account string to memory (Rust)");
+  const accountMem = writeStringToMemoryRust(instance, account);
+
+  console.log("JS: Calling execute_credit_leg (Rust)");
+  const queryPtr = instance.exports.execute_credit_leg(
+    amountMem.ptr,
+    amountMem.len,
+    accountMem.ptr,
+    accountMem.len
+  );
+  console.log("JS: Reading RDF query from memory (Rust)");
+  const query = readStringFromMemoryRust(queryPtr);
+  console.log("Generated RDF query:", query);
+
+
+  console.log("JS: Executing RDF query via TBV-CLI");
+  const result = await makeTbvCliCall("rdf-query", query);
+  console.log("TBV-CLI result:", result);
+
+  console.log("JS: Writing RDF query result to memory (Rust)");
+  const resultMem = writeStringToMemoryRust(instance, result); // Pass 'instance' here, not 'result'
+  if (!resultMem) {
+    throw new Error('Failed to write RDF query result to memory');
+  }
+
+  console.log("JS: Calling process_credit_result (Rust)");
+  console.log("resultMem:", resultMem);
+  console.log("amountMem:", amountMem);
+  const processedResultPtr = instance.exports.process_credit_result(
+    resultMem.ptr,
+    resultMem.len,
+    amountMem.ptr,
+    amountMem.len
+  );
+  const processedResult = readStringFromMemoryRust(processedResultPtr);
+  console.log("Processed result:", processedResult);
 
       console.log("JS: Calling execute_debit_leg (Rust)");
       debitResultPtr = instance.exports.execute_debit_leg(
@@ -521,126 +598,6 @@ async function executeWasmFile(filePath) {
       instance.exports.dealloc(amountMem.ptr, amountMem.len);
       instance.exports.dealloc(accountMem.ptr, accountMem.len);
 
-      console.log("JS: Calling add_to_list (Rust)");
-      const addItemMem = writeStringToMemoryRust("grape");
-      const addResultPtr = instance.exports.add_to_list(
-        addItemMem.ptr,
-        addItemMem.len
-      );
-      const addResult = readStringFromMemoryRust(addResultPtr);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(addResult.split(":")[1])
-      );
-
-      console.log("JS: Calling delete_from_list (Rust)");
-      const deleteItemMem = writeStringToMemoryRust("banana");
-      const deleteResultPtr = instance.exports.delete_from_list(
-        deleteItemMem.ptr,
-        deleteItemMem.len
-      );
-      const deleteResult = readStringFromMemoryRust(deleteResultPtr);
-      console.log(
-        "Result of delete_from_list:",
-        await callApiDeleteFromList(deleteResult.split(":")[1])
-      );
-
-      console.log("JS: Calling get_from_list (Rust)");
-      const getIndexMem = writeStringToMemoryRust("1");
-      const getResultPtr = instance.exports.get_from_list(
-        getIndexMem.ptr,
-        getIndexMem.len
-      );
-      const getResult = readStringFromMemoryRust(getResultPtr);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult))
-      );
-
-      // Add more test cases
-      console.log("JS: Adding another item (Rust)");
-      const addItemMem2 = writeStringToMemoryRust("kiwi");
-      const addResultPtr2 = instance.exports.add_to_list(
-        addItemMem2.ptr,
-        addItemMem2.len
-      );
-      const addResult2 = readStringFromMemoryRust(addResultPtr2);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(addResult2.split(":")[1])
-      );
-
-      console.log("JS: Getting item at index 3 (Rust)");
-      const getIndexMem2 = writeStringToMemoryRust("3");
-      const getResultPtr2 = instance.exports.get_from_list(
-        getIndexMem2.ptr,
-        getIndexMem2.len
-      );
-      const getResult2 = readStringFromMemoryRust(getResultPtr2);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult2))
-      );
-
-      instance.exports.dealloc(addItemMem.ptr, addItemMem.len);
-      instance.exports.dealloc(deleteItemMem.ptr, deleteItemMem.len);
-      instance.exports.dealloc(getIndexMem.ptr, getIndexMem.len);
-      instance.exports.dealloc(addItemMem2.ptr, addItemMem2.len);
-      instance.exports.dealloc(getIndexMem2.ptr, getIndexMem2.len);
-
-      console.log("JS: Running Book Tests (Rust)");
-      const booksData = await getRDFData();
-      console.log("Initial Books Data:", booksData);
-      const booksDataMem = writeStringToMemoryRust(booksData);
-      const booksResultPtr = instance.exports.Rdf_Test(
-        booksDataMem.ptr,
-        booksDataMem.len
-      );
-      const booksTestResult = readStringFromMemoryRust(booksResultPtr);
-      console.log("Books Test Result:", booksTestResult);
-
-      // Add a new book
-      console.log("JS: Adding a new book");
-      const newBookTitle = "New Book Title";
-      const newBookAuthor = "New Book Author";
-      const addBookMem = writeStringToMemoryRust(
-        JSON.stringify({ title: newBookTitle, authorName: newBookAuthor })
-      );
-      const addBookResultPtr = instance.exports.add_book(
-        addBookMem.ptr,
-        addBookMem.len
-      );
-      const addBookResult = readStringFromMemoryRust(addBookResultPtr);
-      console.log("Add Book Result:", addBookResult);
-      await addBook(newBookTitle, newBookAuthor);
-
-      // Delete a book
-      console.log("JS: Deleting a book");
-      const deleteBookMem = writeStringToMemoryRust("To Kill a Mockingbird");
-      const deleteBookResultPtr = instance.exports.delete_book(
-        deleteBookMem.ptr,
-        deleteBookMem.len
-      );
-      const deleteBookResult = readStringFromMemoryRust(deleteBookResultPtr);
-      console.log("Delete Book Result:", deleteBookResult);
-      await deleteBook("To Kill a Mockingbird");
-
-      // Get a book
-      console.log("JS: Getting a book");
-      const getBookMem = writeStringToMemoryRust("1984");
-      const getBookResultPtr = instance.exports.get_book(
-        getBookMem.ptr,
-        getBookMem.len
-      );
-      const getBookResult = readStringFromMemoryRust(getBookResultPtr);
-      console.log("Get Book Result:", getBookResult);
-      const apiGetBookResult = await getBook("1984");
-      console.log("API Get Book Result:", apiGetBookResult);
-
-      instance.exports.dealloc(booksDataMem.ptr, booksDataMem.len);
-      instance.exports.dealloc(addBookMem.ptr, addBookMem.len);
-      instance.exports.dealloc(deleteBookMem.ptr, deleteBookMem.len);
-      instance.exports.dealloc(getBookMem.ptr, getBookMem.len);
     }
 
     console.log(`Testing WASM file: ${filePath}`);
