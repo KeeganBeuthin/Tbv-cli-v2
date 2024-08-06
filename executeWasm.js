@@ -2,29 +2,49 @@ const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require("axios");
+const util = require('util');
 const { spawn } = require("child_process");
+const readFile = util.promisify(fs.readFile);
 
 let apiServer = null;
 
-function startApiServer() {
-  if (!apiServer) {
-    apiServer = require("./simpleApi");
-    console.log("Mock API server is starting on port 3000");
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log("Mock API server is now running on port 3000");
-        resolve();
-      }, 20); // Wait for 1 second
-    });
+async function startApiServer() {
+  if (apiServer) {
+    console.log("API server already running");
+    return apiServer;
   }
-  return Promise.resolve();
+  const { server, closeServer } = require("./simpleApi");
+  apiServer = { server, closeServer };
+  return new Promise((resolve) => {
+    server.on('listening', () => {
+      console.log("Mock API server is now running on http://127.0.0.1:3000");
+      resolve(apiServer);
+    });
+  });
 }
 
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 async function executeWasmFile(filePath) {
+
+  let apiServerInstance;
+  let rdfQueryComplete = false;
+  const rdfQueryPromise = new Promise((resolve) => {
+    global.resolveRdfQuery = () => {
+      rdfQueryComplete = true;
+      resolve();
+    };
+  });
+
   try {
+
     const wasmBuffer = await promisify(fs.readFile)(filePath);
 
-    startApiServer();
+    apiServerInstance = await startApiServer();
+
+    console.log("Waiting for API server to fully start...");
+    await delay(500);
 
     const importObject = {
       env: {
@@ -33,9 +53,7 @@ async function executeWasmFile(filePath) {
         },
         logMessage: (ptr, len) => {
           const memory = new Uint8Array(instance.exports.memory.buffer);
-          const message = new TextDecoder().decode(
-            memory.subarray(ptr, ptr + len)
-          );
+          const message = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
           console.log("WASM:", message);
         },
         query_rdf: (queryPtr, queryLen) => {
@@ -47,18 +65,26 @@ async function executeWasmFile(filePath) {
           const resultPtr = writeStringToMemory(instance, mockResult);
           return resultPtr;
         },
-        query_rdf_tbv_cli: async (queryPtr, queryLen, callbackPtr) => {
+        query_rdf_tbv_cli: async (queryPtr, queryLen) => {
           const query = readStringFromMemory(instance, queryPtr, queryLen);
           console.log("Executing RDF query via TBV-CLI:", query);
-
+        
           try {
             const result = await makeTbvCliCall("rdf-query", query);
             console.log("TBV-CLI result:", result);
-            const resultPtr = writeStringToMemory(instance, result);
-            instance.exports.process_credit_result(resultPtr);
+            if(isTinyGo){
+            const resultPtr = writeStringToMemoryTinyGo(instance, result);
+            console.log("Result written to memory at pointer:", resultPtr);
+            return resultPtr;
+            }
+            else if(isAssemblyScript){
+              const resultPtr = writeStringToMemory(instance, result);
+            console.log("Result written to memory at pointer:", resultPtr);
+            return resultPtr;
+            }
           } catch (error) {
             console.error("Error executing RDF query via TBV-CLI:", error);
-            instance.exports.process_credit_result(0);
+            return 0;
           }
         },
 
@@ -71,15 +97,28 @@ async function executeWasmFile(filePath) {
           console.log("Credit leg result:", result);
         },
 
-        query_rdf_go: (queryPtr, queryLen) => {
-          const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
-          console.log("Executing RDF query (Go):", query);
-
-          // Simulate an RDF query (replace this with actual RDF query logic)
-          const mockResult = JSON.stringify({ results: [{ balance: 1000 }] });
-          const resultMem = writeStringToMemoryTinyGo(mockResult);
-          return resultMem.ptr;
+        query_rdf_tbv_cli: async (queryPtr, queryLen) => {
+          const query = readStringFromMemory(instance, queryPtr, queryLen);
+          console.log("Executing RDF query via TBV-CLI:", query);
+          try {
+            const result = await makeTbvCliCall("rdf-query", query);
+            console.log("TBV-CLI result:", result);
+            let resultPtr;
+            if (isTinyGo) {
+              resultPtr = writeStringToMemoryTinyGo(result);  // Remove 'instance' parameter
+            } else if (isAssemblyScript) {
+              resultPtr = writeStringToMemory(instance, result);
+            }
+            console.log("Result written to memory at pointer:", resultPtr);
+            global.resolveRdfQuery(); // Signal that the RDF query is complete
+            return resultPtr;
+          } catch (error) {
+            console.error("Error executing RDF query via TBV-CLI:", error);
+            return 0;
+          }
         },
+        
+
         get_result_row: (resultPtr) => {
           const results = JSON.parse(readStringFromMemory(instance, resultPtr));
           if (results.length > 0) {
@@ -173,22 +212,22 @@ async function executeWasmFile(filePath) {
       return new Promise((resolve, reject) => {
         console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
         const child = spawn("node", ["index.js", action, data]);
-
+    
         let output = "";
         child.stdout.on("data", (data) => {
           output += data.toString();
           console.log(`TBV-CLI output: ${data}`);
         });
-
+    
         child.stderr.on("data", (data) => {
           console.error(`TBV-CLI Error: ${data}`);
         });
-
+    
         child.on("close", (code) => {
           if (code !== 0) {
             reject(new Error(`TBV-CLI process exited with code ${code}`));
           } else {
-            console.log("Full TBV-CLI output:", output); // Log the full output
+            console.log("Full TBV-CLI output:", output);
             try {
               const resultStart = output.indexOf("RDF Query Result:");
               if (resultStart !== -1) {
@@ -224,127 +263,51 @@ async function executeWasmFile(filePath) {
     const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
-    function writeStringToMemory(instance, str) {
-      console.log(`JS: Writing string "${str}" to memory`);
-      const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str);
-      const ptr = instance.exports.allocateString(encodedStr.length);
-      new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
-      console.log(`JS: Allocated string at ${ptr}`);
-      return ptr;
-    }
-
     function readStringFromMemory(instance, ptr, len) {
-      console.log(
-        `JS: Reading string from memory at ${ptr} with length ${len}`
-      );
+      console.log(`JS: Reading string from memory at ${ptr} with length ${len}`);
       if (ptr === 0 || len === 0) {
         console.log("JS: Received null or empty string");
         return "";
       }
-      const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
+      const memory = new Uint8Array(instance.exports.memory.buffer);
+      let actualLen = len;
+      if (isTinyGo) {
+        // For TinyGo, find the null terminator
+        actualLen = 0;
+        while (actualLen < len && memory[ptr + actualLen] !== 0) {
+          actualLen++;
+        }
+      }
+      const buffer = memory.subarray(ptr, ptr + actualLen);
       const str = new TextDecoder().decode(buffer);
       console.log(`JS: Read string: "${str}"`);
       return str;
     }
 
-    function sanitizeString(str) {
-      return str.replace(/[\x00-\x1F\x7F]/g, "");
-    }
-
-    async function addRDFData(data) {
-      try {
-        const response = await axios.post("http://localhost:3000/rdf", {
-          data,
-        });
-        console.log("RDF data added:", response.data.message);
-        return response.data.currentStore;
-      } catch (error) {
-        console.error("Error adding RDF data:", error);
-        return null;
-      }
-    }
-
-    async function queryRDFData(query) {
-      try {
-        const response = await axios.get("http://localhost:3000/rdf/query", {
-          params: { query },
-        });
-        return response.data.result;
-      } catch (error) {
-        console.error("Error querying RDF data:", error);
-        return null;
-      }
-    }
-
-    async function getRDFData() {
-      try {
-        const response = await axios.get("http://localhost:3000/rdf");
-        return response.data.data;
-      } catch (error) {
-        console.error("Error fetching RDF data:", error);
-        return null;
-      }
-    }
-
-    async function addBook(title, authorName) {
-      try {
-        const response = await axios.post("http://localhost:3000/books", {
-          title,
-          authorName,
-        });
-        console.log("Book added:", response.data.message);
-        return response.data.currentBooks;
-      } catch (error) {
-        console.error("Error adding book:", error);
-        return null;
-      }
-    }
-
-    async function deleteBook(title) {
-      try {
-        const response = await axios.delete(
-          `http://localhost:3000/books/${encodeURIComponent(title)}`
-        );
-        console.log("Book deleted:", response.data.message);
-        return response.data.currentBooks;
-      } catch (error) {
-        console.error("Error deleting book:", error);
-        return null;
-      }
-    }
-
-    async function getBook(title) {
-      try {
-        const response = await axios.get(
-          `http://localhost:3000/books/${encodeURIComponent(title)}`
-        );
-        return response.data.book;
-      } catch (error) {
-        console.error("Error getting book:", error);
-        return null;
-      }
-    }
-
     function writeStringToMemoryTinyGo(str) {
       console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
       const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str + "\0"); // Add null terminator
-      const ptr = instance.exports.malloc(encodedStr.length);
-      new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
-      console.log(`JS: Allocated string at ${ptr}`);
-      return { ptr, length: encodedStr.length - 1 }; // Subtract 1 to exclude null terminator
+      const encodedStr = encoder.encode(str);
+      const ptr = instance.exports.malloc(encodedStr.length + 1); // +1 for null terminator
+      const buffer = new Uint8Array(instance.exports.memory.buffer);
+      buffer.set(encodedStr, ptr);
+      buffer[ptr + encodedStr.length] = 0; // Add null terminator
+      console.log(`JS: Allocated string at ${ptr} with length ${encodedStr.length}`);
+      return { ptr, length: encodedStr.length };
     }
 
-    function readStringFromMemoryTinyGo(ptr) {
-      console.log(`JS: Reading string from memory at ${ptr} (TinyGo)`);
-      let len = 0;
+    function readStringFromMemoryTinyGo(ptr, maxLen) {
+      console.log(`JS: Reading string from memory at ${ptr} with max length ${maxLen} (TinyGo)`);
+      if (ptr === 0) {
+        console.log("JS: Received null pointer");
+        return "";
+      }
       const view = new Uint8Array(instance.exports.memory.buffer);
-      while (view[ptr + len] !== 0) {
+      let len = 0;
+      while (len < maxLen && view[ptr + len] !== 0) {
         len++;
       }
-      const buffer = new Uint8Array(instance.exports.memory.buffer, ptr, len);
-      const str = new TextDecoder().decode(buffer);
+      const str = new TextDecoder().decode(view.subarray(ptr, ptr + len));
       console.log(`JS: Read string: "${str}"`);
       return str;
     }
@@ -369,70 +332,38 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
-    async function callApiAddToList(item) {
-      try {
-        console.log("Sending item:", item);
-        console.log("Item length:", item.length);
-        console.log("Item bytes:", Buffer.from(item).toString("hex"));
-        const response = await axios.post("http://127.0.0.1:3000/list", {
-          item,
-        });
-        console.log(
-          `Current list after adding ${item}:`,
-          response.data.currentList
-        );
-        return response.data.message;
-      } catch (error) {
-        console.error("Error adding item to list:", error);
-        return `Error: ${error.message}`;
-      }
-    }
 
-    async function callApiDeleteFromList(item) {
-      try {
-        const response = await axios.delete(`http://127.0.0.1:3000/list/${item}`);
-        console.log(`Current list after deleting ${item}:`, response.data.currentList);
-        return response.data.message;
-      } catch (error) {
-        console.error("Error deleting item from list:", error);
-        return `Error: ${error.message}`;
-      }
-    }
-
-    async function callApiGetFromList(index) {
-      try {
-        const response = await axios.get(`http://localhost:3000/list/${index}`);
-        console.log(
-          `Current list when getting item at index ${index}:`,
-          response.data.currentList
-        );
-        return response.data.item;
-      } catch (error) {
-        return `Error: ${error.response.data.error}`;
-      }
-    }
-
-    function makeTbvCliCallSync(action, data) {
+    async function makeTbvCliCallSync(action, data) {
       console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
-      const { execSync } = require("child_process");
-      try {
-        const output = execSync(`node index.js ${action} '${data}'`, {
-          encoding: "utf-8",
+      const { exec } = require('child_process');
+      
+      return new Promise((resolve, reject) => {
+        exec(`node index.js ${action} '${data}'`, (error, stdout, stderr) => {
+          if (error) {
+            console.error(`Error executing TBV-CLI command: ${error.message}`);
+            reject(error);
+            return;
+          }
+          if (stderr) {
+            console.error(`TBV-CLI stderr: ${stderr}`);
+          }
+          console.log(`TBV-CLI stdout: ${stdout}`);
+          
+          try {
+            const resultStart = stdout.indexOf("RDF Query Result:");
+            if (resultStart !== -1) {
+              const resultJson = stdout.slice(resultStart + "RDF Query Result:".length).trim();
+              console.log(`Parsed TBV-CLI result: ${resultJson}`);
+              resolve(resultJson);
+            } else {
+              reject(new Error("Failed to find RDF Query Result in TBV-CLI output"));
+            }
+          } catch (parseError) {
+            console.error("Error parsing TBV-CLI output:", parseError);
+            reject(parseError);
+          }
         });
-        console.log("Full TBV-CLI output:", output);
-        const resultStart = output.indexOf("RDF Query Result:");
-        if (resultStart !== -1) {
-          const resultJson = output
-            .slice(resultStart + "RDF Query Result:".length)
-            .trim();
-          console.log(`Parsed TBV-CLI result: ${resultJson}`);
-          return resultJson;
-        } else {
-          throw new Error("Failed to find RDF Query Result in TBV-CLI output");
-        }
-      } catch (error) {
-        throw new Error("Failed to execute TBV-CLI command: " + error.message);
-      }
+      });
     }
 
     const amount = "100";
@@ -468,17 +399,26 @@ importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
   return resultMem.ptr;
 };
 
-      console.log("JS: Calling execute_credit_leg");
-      const creditResultPtr = instance.exports.execute_credit_leg(
-        amountPtr,
-        accountPtr
-      );
-      const creditResult = readStringFromMemory(
-        instance,
-        creditResultPtr,
-        instance.exports.getStringLen(creditResultPtr)
-      );
-      console.log("Credit operation result:", creditResult);
+console.log("JS: Calling execute_credit_leg");
+const queryPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
+const query = readStringFromMemory(instance, queryPtr, instance.exports.getStringLen(queryPtr));
+console.log("Generated RDF query:", query);
+
+// Execute the query using TBV-CLI
+console.log("JS: Executing RDF query via TBV-CLI");
+try {
+  const result = await makeTbvCliCall("rdf-query", query);
+  console.log("TBV-CLI result:", result);
+
+  // Pass the result back to WebAssembly
+  const resultPtr = writeStringToMemory(instance, result);
+  const processedResult = instance.exports.process_credit_result(resultPtr);
+  const processedResultStr = readStringFromMemory(instance, processedResult, instance.exports.getStringLen(processedResult));
+  console.log("Processed result:", processedResultStr);
+} catch (error) {
+  console.error("Error executing RDF query:", error);
+}
+
 
       console.log("JS: Calling execute_debit_leg");
       const debitResultPtr = instance.exports.execute_debit_leg(
@@ -493,127 +433,15 @@ importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
       );
       console.log("Result of execute_debit_leg:", debitResult);
 
-      console.log("JS: Calling add_to_list");
-      const addItemPtr = writeStringToMemory(instance, "grape");
-      const addResultPtr = instance.exports.add_to_list(addItemPtr);
-      const addResult = readStringFromMemory(
-        instance,
-        addResultPtr,
-        instance.exports.getStringLen(addResultPtr)
-      );
-      console.log("Result of add_to_list:", addResult);
-      const sanitizedAddResult = sanitizeString(addResult);
-      console.log(`JS: Sanitized add result: "${sanitizedAddResult}"`);
-      await callApiAddToList(sanitizedAddResult.split(":")[1]);
-
-      console.log("JS: Calling delete_from_list");
-      const deleteItemPtr = writeStringToMemory(instance, "banana");
-      const deleteResultPtr = instance.exports.delete_from_list(deleteItemPtr);
-      const deleteResult = readStringFromMemory(
-        instance,
-        deleteResultPtr,
-        instance.exports.getStringLen(deleteResultPtr)
-      );
-      console.log("Result of delete_from_list:", deleteResult);
-      await callApiDeleteFromList(deleteResult.split(":")[1]);
-
-      console.log("JS: Calling get_from_list");
-      const getIndexPtr = writeStringToMemory(instance, "1");
-      const getResultPtr = instance.exports.get_from_list(getIndexPtr);
-      const getResult = readStringFromMemory(
-        instance,
-        getResultPtr,
-        instance.exports.getStringLen(getResultPtr)
-      );
-      console.log("Result of get_from_list:", getResult);
-      await callApiGetFromList(parseInt(getResult));
-
-      console.log("JS: Adding another item");
-      const addItemPtr2 = writeStringToMemory(instance, "kiwi");
-      const addResultPtr2 = instance.exports.add_to_list(addItemPtr2);
-      const addResult2 = readStringFromMemory(
-        instance,
-        addResultPtr2,
-        instance.exports.getStringLen(addResultPtr2)
-      );
-      const sanitizedAddResult2 = sanitizeString(addResult2);
-      console.log(`JS: Sanitized add result: "${sanitizedAddResult2}"`);
-      await callApiAddToList(sanitizedAddResult2.split(":")[1]);
-
-      console.log("JS: Getting item at index 3");
-      const getIndexPtr2 = writeStringToMemory(instance, "3");
-      const getResultPtr2 = instance.exports.get_from_list(getIndexPtr2);
-      const getResult2 = readStringFromMemory(
-        instance,
-        getResultPtr2,
-        instance.exports.getStringLen(getResultPtr2)
-      );
-      console.log("Result of get_from_list:", getResult2);
-      await callApiGetFromList(parseInt(getResult2));
-
-      console.log("JS: Running Book Tests (AssemblyScript)");
-      const booksData = await getRDFData();
-      console.log("Initial Books Data:", booksData);
-      const booksDataPtr = writeStringToMemory(booksData);
-      const booksResultPtr = instance.exports.Rdf_Test(booksDataPtr);
-      const booksTestResult = readStringFromMemory(booksResultPtr);
-      console.log("Books Test Result:", booksTestResult);
-
-      // Add a new book
-      console.log("JS: Adding a new book");
-      const newBookTitle = "New Book Title";
-      const newBookAuthor = "New Book Author";
-      const addBookPtr = writeStringToMemory(
-        JSON.stringify({ title: newBookTitle, authorName: newBookAuthor })
-      );
-      const addBookResultPtr = instance.exports.add_book(addBookPtr);
-      const addBookResult = readStringFromMemory(addBookResultPtr);
-      console.log("Add Book Result:", addBookResult);
-      await addBook(newBookTitle, newBookAuthor);
-
-      // Delete a book
-      console.log("JS: Deleting a book");
-      const deleteBookPtr = writeStringToMemory("To Kill a Mockingbird");
-      const deleteBookResultPtr = instance.exports.delete_book(deleteBookPtr);
-      const deleteBookResult = readStringFromMemory(deleteBookResultPtr);
-      console.log("Delete Book Result:", deleteBookResult);
-      await deleteBook("To Kill a Mockingbird");
-
-      // Get a book
-      console.log("JS: Getting a book");
-      const getBookPtr = writeStringToMemory("1984");
-      const getBookResultPtr = instance.exports.get_book(getBookPtr);
-      const getBookResult = readStringFromMemory(getBookResultPtr);
-      console.log("Get Book Result:", getBookResult);
-      const apiGetBookResult = await getBook("1984");
-      console.log("API Get Book Result:", apiGetBookResult);
-
-      apiServer.close();
+   
     } else if (isTinyGo) {
       // TinyGo logic
-
-      importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
-        const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
-        console.log("Executing RDF query via TBV-CLI (TinyGo):", query);
-      
-        let result;
-        try {
-          result = makeTbvCliCallSync("rdf-query", query);
-          console.log("TBV-CLI result:", result);
-        } catch (error) {
-          console.error("Error executing RDF query via TBV-CLI:", error);
-          result = JSON.stringify({ error: error.message });
-        }
-      
-        const resultMem = writeStringToMemoryTinyGo(result);
-        return resultMem.ptr;
-      };
 
       console.log("JS: Writing amount string to memory (TinyGo)");
       const amountMem = writeStringToMemoryTinyGo(amount);
       console.log("JS: Writing account string to memory (TinyGo)");
       const accountMem = writeStringToMemoryTinyGo(account);
-
+    
       console.log("JS: Calling execute_credit_leg (TinyGo)");
       const creditResultPtr = instance.exports.execute_credit_leg(
         amountMem.ptr,
@@ -621,18 +449,20 @@ importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
         accountMem.ptr,
         accountMem.length
       );
-
+      
+      console.log(`JS: execute_credit_leg returned pointer: ${creditResultPtr}`);
+      
       if (creditResultPtr === 0) {
-        console.error("Error: execute_credit_leg returned null pointer");
+        console.error("JS: Error: execute_credit_leg returned null pointer");
       } else {
         console.log("JS: Reading credit result from memory (TinyGo)");
-        const creditResult = readStringFromMemoryTinyGo(creditResultPtr);
-        console.log("Result of execute_credit_leg:", creditResult);
-
+        const creditResult = readStringFromMemoryTinyGo(creditResultPtr, 1000);
+        console.log("JS: Result of execute_credit_leg:", creditResult);
+      
         if (creditResult.startsWith("Error:")) {
-          console.error("Error in execute_credit_leg:", creditResult);
+          console.error("JS: Error in execute_credit_leg:", creditResult);
         } else {
-          console.log("Credit operation successful:", creditResult);
+          console.log("JS: Credit operation successful:", creditResult);
         }
       }
 
@@ -647,117 +477,8 @@ importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
       debitResult = readStringFromMemoryTinyGo(debitResultPtr);
       console.log("Result of execute_debit_leg:", debitResult);
 
-      console.log("JS: Calling add_to_list (TinyGo)");
-      const addItemMem = writeStringToMemoryTinyGo("grape");
-      const addResultPtr = instance.exports.add_to_list(
-        addItemMem.ptr,
-        addItemMem.length
-      );
-      const addResult = readStringFromMemoryTinyGo(addResultPtr);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(addResult.split(":")[1])
-      );
 
-      console.log("JS: Calling delete_from_list (TinyGo)");
-      const deleteItemMem = writeStringToMemoryTinyGo("banana");
-      const deleteResultPtr = instance.exports.delete_from_list(
-        deleteItemMem.ptr,
-        deleteItemMem.length
-      );
-      const deleteResult = readStringFromMemoryTinyGo(deleteResultPtr);
-      console.log(
-        "Result of delete_from_list:",
-        await callApiDeleteFromList(deleteResult.split(":")[1])
-      );
-
-      console.log("JS: Calling get_from_list (TinyGo)");
-      const getIndexMem = writeStringToMemoryTinyGo("1");
-      const getResultPtr = instance.exports.get_from_list(
-        getIndexMem.ptr,
-        getIndexMem.length
-      );
-      const getResult = readStringFromMemoryTinyGo(getResultPtr);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult))
-      );
-
-      // Add more test cases
-      console.log("JS: Adding another item (TinyGo)");
-      const addItemMem2 = writeStringToMemoryTinyGo("kiwi");
-      const addResultPtr2 = instance.exports.add_to_list(
-        addItemMem2.ptr,
-        addItemMem2.length
-      );
-      const addResult2 = readStringFromMemoryTinyGo(addResultPtr2);
-      console.log(
-        "Result of add_to_list:",
-        await callApiAddToList(addResult2.split(":")[1])
-      );
-
-      console.log("JS: Getting item at index 3 (TinyGo)");
-      const getIndexMem2 = writeStringToMemoryTinyGo("3");
-      const getResultPtr2 = instance.exports.get_from_list(
-        getIndexMem2.ptr,
-        getIndexMem2.length
-      );
-      const getResult2 = readStringFromMemoryTinyGo(getResultPtr2);
-      console.log(
-        "Result of get_from_list:",
-        await callApiGetFromList(parseInt(getResult2))
-      );
-
-      console.log("JS: Running Book Tests (TinyGo)");
-      const booksData = await getRDFData();
-      console.log("Initial Books Data:", booksData);
-      const booksDataMem = writeStringToMemoryTinyGo(booksData);
-      const booksResultPtr = instance.exports.Rdf_Test(
-        booksDataMem.ptr,
-        booksDataMem.length
-      );
-      const booksTestResult = readStringFromMemoryTinyGo(booksResultPtr);
-      console.log("Books Test Result:", booksTestResult);
-
-      // Add a new book
-      console.log("JS: Adding a new book");
-      const newBookTitle = "New Book Title";
-      const newBookAuthor = "New Book Author";
-      const addBookMem = writeStringToMemoryTinyGo(
-        JSON.stringify({ title: newBookTitle, authorName: newBookAuthor })
-      );
-      const addBookResultPtr = instance.exports.add_book(
-        addBookMem.ptr,
-        addBookMem.length
-      );
-      const addBookResult = readStringFromMemoryTinyGo(addBookResultPtr);
-      console.log("Add Book Result:", addBookResult);
-      await addBook(newBookTitle, newBookAuthor);
-
-      // Delete a book
-      console.log("JS: Deleting a book");
-      const deleteBookMem = writeStringToMemoryTinyGo("To Kill a Mockingbird");
-      const deleteBookResultPtr = instance.exports.delete_book(
-        deleteBookMem.ptr,
-        deleteBookMem.length
-      );
-      const deleteBookResult = readStringFromMemoryTinyGo(deleteBookResultPtr);
-      console.log("Delete Book Result:", deleteBookResult);
-      await deleteBook("To Kill a Mockingbird");
-
-      // Get a book
-      console.log("JS: Getting a book");
-      const getBookMem = writeStringToMemoryTinyGo("1984");
-      const getBookResultPtr = instance.exports.get_book(
-        getBookMem.ptr,
-        getBookMem.length
-      );
-      const getBookResult = readStringFromMemoryTinyGo(getBookResultPtr);
-      console.log("Get Book Result:", getBookResult);
-      const apiGetBookResult = await getBook("1984");
-      console.log("API Get Book Result:", apiGetBookResult);
-
-      apiServer.close();
+     
     } else if (isRust) {
       // Rust logic
       console.log("JS: Writing amount string to memory (Rust)");
@@ -911,14 +632,35 @@ importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
       instance.exports.dealloc(deleteBookMem.ptr, deleteBookMem.len);
       instance.exports.dealloc(getBookMem.ptr, getBookMem.len);
 
-      apiServer.close();
+      
     }
 
+    
     console.log(`Testing WASM file: ${filePath}`);
+
+    console.log("WebAssembly execution completed, waiting for RDF query to complete");
+    await Promise.race([
+      rdfQueryPromise,
+      delay(10000) // 10 second timeout
+    ]);
+
+    if (!rdfQueryComplete) {
+      console.log("RDF query timed out");
+    } else {
+      console.log("RDF query completed successfully");
+    }
+
     return { success: true, creditResult };
+
+    
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
+  } finally {
+    if (apiServerInstance) {
+      console.log("Closing API server");
+      apiServerInstance.closeServer();
+    }
   }
 }
 

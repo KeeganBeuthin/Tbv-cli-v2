@@ -31,7 +31,7 @@ program
   .command("test <wasmFile>")
   .description("Execute and test a specific wasm file")
   .action(async (wasmFile) => {
-    startApiServer();
+    await startApiServer();
     const filePath = path.resolve(wasmFile);
     if (!fs.existsSync(filePath)) {
       console.error(`WASM file ${filePath} does not exist.`);

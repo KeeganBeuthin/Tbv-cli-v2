@@ -121,8 +121,28 @@ app.post("/rdf/query", (req, res) => {
   }
 });
 
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 const server = app.listen(3000, '127.0.0.1', () => {
   console.log("Mock API server is running on http://127.0.0.1:3000");
 });
 
-module.exports = server;
+server.on('error', (error) => {
+  console.error("Error in mock API server:", error);
+});
+
+server.on('close', () => {
+  console.log("Mock API server is shutting down");
+});
+
+// Add this to track if something is explicitly closing the server
+function closeServer() {
+  console.log("closeServer function called");
+  server.close(() => {
+    console.log("Server closed through closeServer function");
+  });
+}
+
+module.exports = { server, closeServer };

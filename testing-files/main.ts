@@ -24,46 +24,13 @@ declare function free_result(resultPtr: usize): void;
 @external("env", "set_query_result")
 declare function set_query_result(resultPtr: usize): void;
 
-
-
-
-class Book {
-  title: string;
-  authorName: string;
-
-  constructor(title: string, authorName: string) {
-    this.title = title;
-    this.authorName = authorName;
-  }
+function parseFloat(str: string): f64 {
+  return F64.parseFloat(str);
 }
 
-
-
-
-function parseBalance(jsonStr: string): f64 {
-  const balanceStart = jsonStr.indexOf('"balance":') + 10;
-  const balanceEnd = jsonStr.indexOf('}', balanceStart);
-  if (balanceStart === 9 || balanceEnd === -1) {
-    consoleLog("Error parsing balance: invalid JSON format");
-    return NaN;
-  }
-  const balanceStr = jsonStr.substring(balanceStart, balanceEnd);
-  return parseFloat(balanceStr);
+function isNaN(value: f64): bool {
+  return value != value;
 }
-
-function cleanBalanceString(balanceStr: string): string {
-  let result = "";
-  for (let i = 0; i < balanceStr.length; i++) {
-    const char = balanceStr.charAt(i);
-    if (char >= '0' && char <= '9' || char === '.') {
-      result += char;
-    }
-  }
-  return result;
-}
-
-
-
 
 function consoleLog(message: string): void {
   const encoded = String.UTF8.encode(message);
@@ -77,30 +44,9 @@ export function allocateString(len: i32): usize {
   return ptr;
 }
 
-
-export function AssemblyScript(): void {}
-
-
-export function writeString(ptr: usize, strPtr: usize, strLen: i32): void {
-  consoleLog(`Entering writeString function with ptr: ${ptr}, strPtr: ${strPtr}, strLen: ${strLen}`);
-  
-  consoleLog(`Attempting to read string from memory`);
-  const buffer = new ArrayBuffer(strLen);
-  memory.copy(changetype<usize>(buffer), strPtr, strLen);
-  const str = String.UTF8.decode(buffer);
-  consoleLog(`Read string: "${str}"`);
-  
-  consoleLog(`Attempting to write string of length ${strLen} to address ${ptr}`);
-  consoleLog(`Current memory size: ${memory.size() * 65536} bytes`);
-  
-  if (ptr + strLen > <usize>(memory.size() * 65536)) {
-    consoleLog(`Error: Not enough memory to write string. Current memory: ${memory.size() * 65536}, Required: ${ptr + strLen}`);
-    return;
-  }
-  
-  memory.copy(ptr, strPtr, strLen);
-  
-  consoleLog(`Wrote string "${str}" to ${ptr} with length ${strLen}`);
+export function writeString(ptr: usize, str: string): void {
+  const buffer = String.UTF8.encode(str);
+  memory.copy(ptr, changetype<usize>(buffer), buffer.byteLength);
 }
 
 export function getStringLen(ptr: usize): i32 {
@@ -113,43 +59,25 @@ export function getStringLen(ptr: usize): i32 {
   return len;
 }
 
-export function readString(ptr: usize, len: i32): usize {
-  consoleLog(`Attempting to read string of length ${len} from address ${ptr}`);
-  const buffer = new ArrayBuffer(len);
-  memory.copy(changetype<usize>(buffer), ptr, len);
-  const str = String.UTF8.decode(buffer);
-  consoleLog(`Read string "${str}" from ${ptr} with length ${len}`);
-  
-
-  const newPtr = __new(len, idof<ArrayBuffer>());
-  memory.copy(newPtr, ptr, len);
-  return newPtr;
+export function readString(ptr: usize): string {
+  const len = getStringLen(ptr);
+  const buffer = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    buffer[i] = load<u8>(ptr + i);
+  }
+  return String.UTF8.decode(buffer.buffer);
 }
-
-export function Rdf_Test2(rdfDataPtr: usize): usize {
-  const rdfDataLen = getStringLen(rdfDataPtr);
-  const rdfData = readString(rdfDataPtr, rdfDataLen);
-  const message = `RDF_TEST:${String.UTF8.decode(changetype<ArrayBuffer>(rdfData))}`;
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
-}
-
 
 let globalAmount: f64 = 0;
 
 export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
-  const amountLen = getStringLen(amountPtr);
-  const accountLen = getStringLen(accountPtr);
-  
-  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, amountLen)));
-  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, accountLen)));
-  
-  globalAmount = parseFloat(amount);
+  const amount = readString(amountPtr);
+  const account = readString(accountPtr);
   
   consoleLog(`Executing credit leg for amount: ${amount}, account: ${account}`);
 
+  globalAmount = parseFloat(amount)
+  
   // Construct RDF query
   const query = `
     PREFIX ex: <http://example.org/>
@@ -159,182 +87,95 @@ export function execute_credit_leg(amountPtr: usize, accountPtr: usize): usize {
     }
   `;
 
-  // Call RDF SDK to execute query using tbv-cli
-  const queryEncoded = String.UTF8.encode(query);
-  const queryPtr = allocateString(queryEncoded.byteLength);
-  writeString(queryPtr, changetype<usize>(queryEncoded), queryEncoded.byteLength);
-  
-  // Make the call to RDF SDK
-  const resultPtr = query_rdf_tbv_cli(queryPtr, queryEncoded.byteLength);
+  // Allocate memory for the query string and write it
+  const queryPtr = allocateString(query.length);
+  writeString(queryPtr, query);
 
-  // Check if the query was successful
-  if (resultPtr == 0) {
-    return createErrorResult("Error executing RDF query");
-  }
-
-  // Process the result
-  return process_credit_result(resultPtr);
+  // Return the pointer to the query string
+  return queryPtr;
 }
 
 
 export function process_credit_result(resultPtr: usize): usize {
-  if (resultPtr === 0) {
-    consoleLog("Error executing RDF query");
-    return createErrorResult("Error executing RDF query");
-  }
-
-  const resultLen = getStringLen(resultPtr);
-  const resultStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(resultPtr, resultLen)));
-  consoleLog(`Query result: ${resultStr}`);
+  const result = readString(resultPtr);
+  consoleLog(`Processing credit result: ${result}`);
 
   // Parse the balance from the result string
-  const currentBalance = parseBalance(resultStr);
-  if (isNaN(currentBalance)) {
-    consoleLog(`Error: Invalid balance value "${resultStr}"`);
-    return createErrorResult(`Invalid balance value "${resultStr}"`);
+  const balanceStart = result.indexOf('"balance":') + 10;
+  const balanceEnd = result.indexOf('}', balanceStart);
+  if (balanceStart === 9 || balanceEnd === -1) {
+    const errorMessage = "Invalid result format or no balance found";
+    consoleLog(errorMessage);
+    
+    // Allocate memory for the error message and write it
+    const errorPtr = allocateString(errorMessage.length);
+    writeString(errorPtr, errorMessage);
+    
+    return errorPtr;
   }
 
-  const newBalance = currentBalance + globalAmount;
-  const formattedNewBalance = (Math.round(newBalance * 100) / 100).toString();
+  const balanceStr = result.substring(balanceStart, balanceEnd);
+  const balance = parseFloat(balanceStr);
 
-  const message = `Credited ${globalAmount} to account. Previous balance: ${currentBalance}, New balance: ${formattedNewBalance}`;
-  return createSuccessResult(message);
+  if (isNaN(balance)) {
+    const errorMessage = `Invalid balance value: ${balanceStr}`;
+    consoleLog(errorMessage);
+    
+    // Allocate memory for the error message and write it
+    const errorPtr = allocateString(errorMessage.length);
+    writeString(errorPtr, errorMessage);
+    
+    return errorPtr;
+  }
+
+  const newBalance = balance + globalAmount;  // Assuming globalAmount is set in execute_credit_leg
+  
+  const responseMessage = `Current balance: ${balance}. After credit of ${globalAmount}, new balance: ${newBalance}`;
+  consoleLog(responseMessage);
+  
+  // Allocate memory for the response and write it
+  const responsePtr = allocateString(responseMessage.length);
+  writeString(responsePtr, responseMessage);
+  
+  return responsePtr;
 }
 
 function createErrorResult(message: string): usize {
   const errorMessage = `Error: ${message}`;
-  const messageEncoded = String.UTF8.encode(errorMessage);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
+  const ptr = allocateString(errorMessage.length);
+  writeString(ptr, errorMessage);
+  return ptr;
 }
 
 function createSuccessResult(message: string): usize {
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
+  const ptr = allocateString(message.length);
+  writeString(ptr, message);
+  return ptr;
 }
 
-
 export function execute_debit_leg(amountPtr: usize, accountPtr: usize): usize {
-  const amountLen = getStringLen(amountPtr);
-  const accountLen = getStringLen(accountPtr);
-  
-  const amount = String.UTF8.decode(changetype<ArrayBuffer>(readString(amountPtr, amountLen)));
-  const account = String.UTF8.decode(changetype<ArrayBuffer>(readString(accountPtr, accountLen)));
+  const amount = readString(amountPtr);
+  const account = readString(accountPtr);
   
   const message = `Debiting ${amount} from account ${account}`;
   consoleLog(`Created message: "${message}"`);
   
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
+  const ptr = allocateString(message.length);
+  writeString(ptr, message);
   
-  return messagePtr;
+  return ptr;
 }
 
-
-
-export function add_to_list(itemPtr: usize): usize {
-  const itemLen = getStringLen(itemPtr);
-  const item = String.UTF8.decode(changetype<ArrayBuffer>(readString(itemPtr, itemLen)));
-  const message = `add:${item}`;
-  consoleLog(`Add to list: ${message}`);
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
-}
-
-export function delete_from_list(itemPtr: usize): usize {
-  const itemLen = getStringLen(itemPtr);
-  const item = readString(itemPtr, itemLen);
-  const message = `delete:${String.UTF8.decode(changetype<ArrayBuffer>(item))}`;
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
-}
-
-export function get_from_list(indexPtr: usize): usize {
-  const indexLen = getStringLen(indexPtr);
-  const index = String.UTF8.decode(changetype<ArrayBuffer>(readString(indexPtr, indexLen)));
-  const message = index;
-  consoleLog(`Get from list: ${message}`);
-  const messageEncoded = String.UTF8.encode(message);
-  const messagePtr = allocateString(messageEncoded.byteLength);
-  writeString(messagePtr, changetype<usize>(messageEncoded), messageEncoded.byteLength);
-  return messagePtr;
-}
-
-function parseBooks(jsonStr: string): Book[] {
-  const books: Book[] = [];
-  const parts = jsonStr.split("},");
-  for (let i = 0; i < parts.length; i++) {
-    let part = parts[i].replace("{", "").replace("}", "").replace("[", "").replace("]", "");
-    const fields = part.split(",");
-    let title: string = "";
-    let authorName: string = "";
-    for (let j = 0; j < fields.length; j++) {
-      const keyValue = fields[j].split(":");
-      const key = keyValue[0].split('"').join('').trim();
-      const value = keyValue[1].split('"').join('').trim();
-      if (key === "title") {
-        title = value;
-      } else if (key === "authorName") {
-        authorName = value;
-      }
-    }
-    books.push(new Book(title, authorName));
+function parseBalance(jsonStr: string): f64 {
+  const balanceStart = jsonStr.indexOf('"balance":') + 10;
+  const balanceEnd = jsonStr.indexOf('}', balanceStart);
+  if (balanceStart === 9 || balanceEnd === -1) {
+    consoleLog("Error parsing balance: invalid JSON format");
+    return NaN;
   }
-  return books;
+  const balanceStr = jsonStr.substring(balanceStart, balanceEnd);
+  return parseFloat(balanceStr);
 }
 
-export function Rdf_Test(rdfDataPtr: usize): usize {
-  const rdfDataLen = getStringLen(rdfDataPtr);
-  const rdfDataStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(rdfDataPtr, rdfDataLen)));
 
-  const books = parseBooks(rdfDataStr);
-  let result = "RDF_TEST:";
-  for (let i = 0; i < books.length; i++) {
-    result += `Title: ${books[i].title}, Author: ${books[i].authorName}; `;
-  }
-  
-  const resultEncoded = String.UTF8.encode(result);
-  const resultPtr = allocateString(resultEncoded.byteLength);
-  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
-  return resultPtr;
-}
-
-export function add_book(bookDataPtr: usize): usize {
-  const bookDataLen = getStringLen(bookDataPtr);
-  const bookDataStr = String.UTF8.decode(changetype<ArrayBuffer>(readString(bookDataPtr, bookDataLen)));
-  const books = parseBooks(`[${bookDataStr}]`);
-  const book = books[0];
-  const result = `Added book: ${book.title} by ${book.authorName}`;
-  const resultEncoded = String.UTF8.encode(result);
-  const resultPtr = allocateString(resultEncoded.byteLength);
-  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
-  return resultPtr;
-}
-
-export function delete_book(titlePtr: usize): usize {
-  const titleLen = getStringLen(titlePtr);
-  const title = String.UTF8.decode(changetype<ArrayBuffer>(readString(titlePtr, titleLen)));
-  const result = `Deleted book: ${title}`;
-  const resultEncoded = String.UTF8.encode(result);
-  const resultPtr = allocateString(resultEncoded.byteLength);
-  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
-  return resultPtr;
-}
-
-export function get_book(titlePtr: usize): usize {
-  const titleLen = getStringLen(titlePtr);
-  const title = String.UTF8.decode(changetype<ArrayBuffer>(readString(titlePtr, titleLen)));
-  const result = `Retrieved book: ${title}`;
-  const resultEncoded = String.UTF8.encode(result);
-  const resultPtr = allocateString(resultEncoded.byteLength);
-  writeString(resultPtr, changetype<usize>(resultEncoded), resultEncoded.byteLength);
-  return resultPtr;
-}
+export function AssemblyScript(): void {}
