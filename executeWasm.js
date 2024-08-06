@@ -263,37 +263,32 @@ async function executeWasmFile(filePath) {
     const isRust = typeof instance.exports.alloc === "function";
     const isAssemblyScript = !isTinyGo && !isRust;
 
-    function readStringFromMemory(instance, ptr, len) {
-      console.log(`JS: Reading string from memory at ${ptr} with length ${len}`);
-      if (ptr === 0 || len === 0) {
-        console.log("JS: Received null or empty string");
+    function readStringFromMemory(instance, ptr, maxLen) {
+      console.log(`JS: Reading string from memory at ${ptr} with max length ${maxLen}`);
+      if (ptr === 0) {
+        console.log("JS: Received null pointer");
         return "";
       }
       const memory = new Uint8Array(instance.exports.memory.buffer);
-      let actualLen = len;
-      if (isTinyGo) {
-        // For TinyGo, find the null terminator
-        actualLen = 0;
-        while (actualLen < len && memory[ptr + actualLen] !== 0) {
-          actualLen++;
-        }
+      let end = ptr;
+      while (end < ptr + maxLen && memory[end] !== 0) {
+        end++;
       }
-      const buffer = memory.subarray(ptr, ptr + actualLen);
-      const str = new TextDecoder().decode(buffer);
+      const str = new TextDecoder().decode(memory.subarray(ptr, end));
       console.log(`JS: Read string: "${str}"`);
       return str;
     }
 
+    
     function writeStringToMemoryTinyGo(str) {
       console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
       const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str);
-      const ptr = instance.exports.malloc(encodedStr.length + 1); // +1 for null terminator
-      const buffer = new Uint8Array(instance.exports.memory.buffer);
-      buffer.set(encodedStr, ptr);
-      buffer[ptr + encodedStr.length] = 0; // Add null terminator
+      const encodedStr = encoder.encode(str + '\0');
+      const ptr = instance.exports.malloc(encodedStr.length);
+      const memory = new Uint8Array(instance.exports.memory.buffer);
+      memory.set(encodedStr, ptr);
       console.log(`JS: Allocated string at ${ptr} with length ${encodedStr.length}`);
-      return { ptr, length: encodedStr.length };
+      return { ptr, length: encodedStr.length - 1 }; // Subtract 1 to exclude null terminator
     }
 
     function readStringFromMemoryTinyGo(ptr, maxLen) {
@@ -443,28 +438,27 @@ try {
       const accountMem = writeStringToMemoryTinyGo(account);
     
       console.log("JS: Calling execute_credit_leg (TinyGo)");
-      const creditResultPtr = instance.exports.execute_credit_leg(
+      const queryPtr = instance.exports.execute_credit_leg(
         amountMem.ptr,
         amountMem.length,
         accountMem.ptr,
         accountMem.length
       );
+    
+      console.log("JS: Reading RDF query from memory (TinyGo)");
+      const query = readStringFromMemory(instance, queryPtr, 1000);
+      console.log("Generated RDF query:", query);
+    
+      console.log("JS: Executing RDF query via TBV-CLI");
+      const result = await makeTbvCliCall("rdf-query", query);
+      console.log("TBV-CLI result:", result);
+    
+      const resultMem = writeStringToMemoryTinyGo(result);
       
-      console.log(`JS: execute_credit_leg returned pointer: ${creditResultPtr}`);
-      
-      if (creditResultPtr === 0) {
-        console.error("JS: Error: execute_credit_leg returned null pointer");
-      } else {
-        console.log("JS: Reading credit result from memory (TinyGo)");
-        const creditResult = readStringFromMemoryTinyGo(creditResultPtr, 1000);
-        console.log("JS: Result of execute_credit_leg:", creditResult);
-      
-        if (creditResult.startsWith("Error:")) {
-          console.error("JS: Error in execute_credit_leg:", creditResult);
-        } else {
-          console.log("JS: Credit operation successful:", creditResult);
-        }
-      }
+      console.log("JS: Calling process_credit_result (TinyGo)");
+      const processedResultPtr = instance.exports.process_credit_result(resultMem.ptr);
+      const processedResult = readStringFromMemory(instance, processedResultPtr, 1000);
+      console.log("Processed result:", processedResult);
 
       console.log("JS: Calling execute_debit_leg (TinyGo)");
       debitResultPtr = instance.exports.execute_debit_leg(

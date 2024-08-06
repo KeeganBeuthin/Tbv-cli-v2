@@ -33,15 +33,8 @@ func execute_credit_leg(amountPtr *byte, amountLen int32, accountPtr *byte, acco
     }
   `, account)
 
-	queryPtr := stringToPtr(query)
-	resultPtr := query_rdf_tbv_cli(queryPtr, int32(len(query)))
-
-	if resultPtr == nil {
-		return createErrorResult("Error executing RDF query")
-	}
-
-	// Return a pending status
-	return stringToPtr("PENDING")
+	// Return the query string pointer
+	return stringToPtr(query)
 }
 
 //export process_credit_result
@@ -51,7 +44,7 @@ func process_credit_result(resultPtr *byte) *byte {
 	}
 
 	resultStr := goString(resultPtr, -1)
-	fmt.Printf("Query result: %s\n", resultStr)
+	fmt.Printf("Processing credit result: %s\n", resultStr)
 
 	var queryResult struct {
 		Results []struct {
@@ -73,7 +66,7 @@ func process_credit_result(resultPtr *byte) *byte {
 	}
 
 	newBalance := balance + globalAmount
-	message := fmt.Sprintf("Credited %f to account. Previous balance: %f, New balance: %f", globalAmount, balance, newBalance)
+	message := fmt.Sprintf("Current balance: %.2f. After credit of %.2f, new balance: %.2f", balance, globalAmount, newBalance)
 	return createSuccessResult(message)
 }
 
