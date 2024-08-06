@@ -2,7 +2,7 @@ const fs = require("fs");
 const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require("axios");
-const util = require('util');
+const util = require("util");
 const { spawn } = require("child_process");
 const readFile = util.promisify(fs.readFile);
 
@@ -16,18 +16,16 @@ async function startApiServer() {
   const { server, closeServer } = require("./simpleApi");
   apiServer = { server, closeServer };
   return new Promise((resolve) => {
-    server.on('listening', () => {
+    server.on("listening", () => {
       console.log("Mock API server is now running on http://127.0.0.1:3000");
       resolve(apiServer);
     });
   });
 }
 
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function executeWasmFile(filePath) {
-
   let apiServerInstance;
   let rdfQueryComplete = false;
   const rdfQueryPromise = new Promise((resolve) => {
@@ -38,7 +36,6 @@ async function executeWasmFile(filePath) {
   });
 
   try {
-
     const wasmBuffer = await promisify(fs.readFile)(filePath);
 
     apiServerInstance = await startApiServer();
@@ -53,7 +50,9 @@ async function executeWasmFile(filePath) {
         },
         logMessage: (ptr, len) => {
           const memory = new Uint8Array(instance.exports.memory.buffer);
-          const message = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
+          const message = new TextDecoder().decode(
+            memory.subarray(ptr, ptr + len)
+          );
           console.log("WASM:", message);
         },
         query_rdf: (queryPtr, queryLen) => {
@@ -68,19 +67,18 @@ async function executeWasmFile(filePath) {
         query_rdf_tbv_cli: async (queryPtr, queryLen) => {
           const query = readStringFromMemory(instance, queryPtr, queryLen);
           console.log("Executing RDF query via TBV-CLI:", query);
-        
+
           try {
             const result = await makeTbvCliCall("rdf-query", query);
             console.log("TBV-CLI result:", result);
-            if(isTinyGo){
-            const resultPtr = writeStringToMemoryTinyGo(instance, result);
-            console.log("Result written to memory at pointer:", resultPtr);
-            return resultPtr;
-            }
-            else if(isAssemblyScript){
+            if (isTinyGo) {
+              const resultPtr = writeStringToMemoryTinyGo(instance, result);
+              console.log("Result written to memory at pointer:", resultPtr);
+              return resultPtr;
+            } else if (isAssemblyScript) {
               const resultPtr = writeStringToMemory(instance, result);
-            console.log("Result written to memory at pointer:", resultPtr);
-            return resultPtr;
+              console.log("Result written to memory at pointer:", resultPtr);
+              return resultPtr;
             }
           } catch (error) {
             console.error("Error executing RDF query via TBV-CLI:", error);
@@ -105,7 +103,7 @@ async function executeWasmFile(filePath) {
             console.log("TBV-CLI result:", result);
             let resultPtr;
             if (isTinyGo) {
-              resultPtr = writeStringToMemoryTinyGo(result);  // Remove 'instance' parameter
+              resultPtr = writeStringToMemoryTinyGo(result); // Remove 'instance' parameter
             } else if (isAssemblyScript) {
               resultPtr = writeStringToMemory(instance, result);
             }
@@ -117,7 +115,6 @@ async function executeWasmFile(filePath) {
             return 0;
           }
         },
-        
 
         get_result_row: (resultPtr) => {
           const results = JSON.parse(readStringFromMemory(instance, resultPtr));
@@ -212,17 +209,17 @@ async function executeWasmFile(filePath) {
       return new Promise((resolve, reject) => {
         console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
         const child = spawn("node", ["index.js", action, data]);
-    
+
         let output = "";
         child.stdout.on("data", (data) => {
           output += data.toString();
           console.log(`TBV-CLI output: ${data}`);
         });
-    
+
         child.stderr.on("data", (data) => {
           console.error(`TBV-CLI Error: ${data}`);
         });
-    
+
         child.on("close", (code) => {
           if (code !== 0) {
             reject(new Error(`TBV-CLI process exited with code ${code}`));
@@ -264,7 +261,9 @@ async function executeWasmFile(filePath) {
     const isAssemblyScript = !isTinyGo && !isRust;
 
     function readStringFromMemory(instance, ptr, maxLen) {
-      console.log(`JS: Reading string from memory at ${ptr} with max length ${maxLen}`);
+      console.log(
+        `JS: Reading string from memory at ${ptr} with max length ${maxLen}`
+      );
       if (ptr === 0) {
         console.log("JS: Received null pointer");
         return "";
@@ -279,20 +278,23 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
-    
     function writeStringToMemoryTinyGo(str) {
       console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
       const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str + '\0');
+      const encodedStr = encoder.encode(str + "\0");
       const ptr = instance.exports.malloc(encodedStr.length);
       const memory = new Uint8Array(instance.exports.memory.buffer);
       memory.set(encodedStr, ptr);
-      console.log(`JS: Allocated string at ${ptr} with length ${encodedStr.length}`);
+      console.log(
+        `JS: Allocated string at ${ptr} with length ${encodedStr.length}`
+      );
       return { ptr, length: encodedStr.length - 1 }; // Subtract 1 to exclude null terminator
     }
 
     function readStringFromMemoryTinyGo(ptr, maxLen) {
-      console.log(`JS: Reading string from memory at ${ptr} with max length ${maxLen} (TinyGo)`);
+      console.log(
+        `JS: Reading string from memory at ${ptr} with max length ${maxLen} (TinyGo)`
+      );
       if (ptr === 0) {
         console.log("JS: Received null pointer");
         return "";
@@ -327,11 +329,10 @@ async function executeWasmFile(filePath) {
       return str;
     }
 
-
     async function makeTbvCliCallSync(action, data) {
       console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
-      const { exec } = require('child_process');
-      
+      const { exec } = require("child_process");
+
       return new Promise((resolve, reject) => {
         exec(`node index.js ${action} '${data}'`, (error, stdout, stderr) => {
           if (error) {
@@ -343,15 +344,19 @@ async function executeWasmFile(filePath) {
             console.error(`TBV-CLI stderr: ${stderr}`);
           }
           console.log(`TBV-CLI stdout: ${stdout}`);
-          
+
           try {
             const resultStart = stdout.indexOf("RDF Query Result:");
             if (resultStart !== -1) {
-              const resultJson = stdout.slice(resultStart + "RDF Query Result:".length).trim();
+              const resultJson = stdout
+                .slice(resultStart + "RDF Query Result:".length)
+                .trim();
               console.log(`Parsed TBV-CLI result: ${resultJson}`);
               resolve(resultJson);
             } else {
-              reject(new Error("Failed to find RDF Query Result in TBV-CLI output"));
+              reject(
+                new Error("Failed to find RDF Query Result in TBV-CLI output")
+              );
             }
           } catch (parseError) {
             console.error("Error parsing TBV-CLI output:", parseError);
@@ -377,43 +382,54 @@ async function executeWasmFile(filePath) {
       const amountPtr = writeStringToMemory(instance, amount);
       const accountPtr = writeStringToMemory(instance, account);
 
-importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
-  const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
-  console.log("Executing RDF query via TBV-CLI (TinyGo):", query);
+      importObject.env.query_rdf_tbv_cli = (queryPtr, queryLen) => {
+        const query = readStringFromMemoryTinyGo(queryPtr, queryLen);
+        console.log("Executing RDF query via TBV-CLI (TinyGo):", query);
 
-  let result;
-  try {
-    result = makeTbvCliCallSync("rdf-query", query);
-    console.log("TBV-CLI result:", result);
-  } catch (error) {
-    console.error("Error executing RDF query via TBV-CLI:", error);
-    result = JSON.stringify({ error: error.message });
-  }
+        let result;
+        try {
+          result = makeTbvCliCallSync("rdf-query", query);
+          console.log("TBV-CLI result:", result);
+        } catch (error) {
+          console.error("Error executing RDF query via TBV-CLI:", error);
+          result = JSON.stringify({ error: error.message });
+        }
 
-  const resultMem = writeStringToMemoryTinyGo(result);
-  return resultMem.ptr;
-};
+        const resultMem = writeStringToMemoryTinyGo(result);
+        return resultMem.ptr;
+      };
 
-console.log("JS: Calling execute_credit_leg");
-const queryPtr = instance.exports.execute_credit_leg(amountPtr, accountPtr);
-const query = readStringFromMemory(instance, queryPtr, instance.exports.getStringLen(queryPtr));
-console.log("Generated RDF query:", query);
+      console.log("JS: Calling execute_credit_leg");
+      const queryPtr = instance.exports.execute_credit_leg(
+        amountPtr,
+        accountPtr
+      );
+      const query = readStringFromMemory(
+        instance,
+        queryPtr,
+        instance.exports.getStringLen(queryPtr)
+      );
+      console.log("Generated RDF query:", query);
 
-// Execute the query using TBV-CLI
-console.log("JS: Executing RDF query via TBV-CLI");
-try {
-  const result = await makeTbvCliCall("rdf-query", query);
-  console.log("TBV-CLI result:", result);
+      // Execute the query using TBV-CLI
+      console.log("JS: Executing RDF query via TBV-CLI");
+      try {
+        const result = await makeTbvCliCall("rdf-query", query);
+        console.log("TBV-CLI result:", result);
 
-  // Pass the result back to WebAssembly
-  const resultPtr = writeStringToMemory(instance, result);
-  const processedResult = instance.exports.process_credit_result(resultPtr);
-  const processedResultStr = readStringFromMemory(instance, processedResult, instance.exports.getStringLen(processedResult));
-  console.log("Processed result:", processedResultStr);
-} catch (error) {
-  console.error("Error executing RDF query:", error);
-}
-
+        // Pass the result back to WebAssembly
+        const resultPtr = writeStringToMemory(instance, result);
+        const processedResult =
+          instance.exports.process_credit_result(resultPtr);
+        const processedResultStr = readStringFromMemory(
+          instance,
+          processedResult,
+          instance.exports.getStringLen(processedResult)
+        );
+        console.log("Processed result:", processedResultStr);
+      } catch (error) {
+        console.error("Error executing RDF query:", error);
+      }
 
       console.log("JS: Calling execute_debit_leg");
       const debitResultPtr = instance.exports.execute_debit_leg(
@@ -427,8 +443,6 @@ try {
         instance.exports.getStringLen(debitResultPtr)
       );
       console.log("Result of execute_debit_leg:", debitResult);
-
-   
     } else if (isTinyGo) {
       // TinyGo logic
 
@@ -436,7 +450,7 @@ try {
       const amountMem = writeStringToMemoryTinyGo(amount);
       console.log("JS: Writing account string to memory (TinyGo)");
       const accountMem = writeStringToMemoryTinyGo(account);
-    
+
       console.log("JS: Calling execute_credit_leg (TinyGo)");
       const queryPtr = instance.exports.execute_credit_leg(
         amountMem.ptr,
@@ -444,35 +458,37 @@ try {
         accountMem.ptr,
         accountMem.length
       );
-    
+
       console.log("JS: Reading RDF query from memory (TinyGo)");
       const query = readStringFromMemory(instance, queryPtr, 1000);
       console.log("Generated RDF query:", query);
-    
+
       console.log("JS: Executing RDF query via TBV-CLI");
       const result = await makeTbvCliCall("rdf-query", query);
       console.log("TBV-CLI result:", result);
-    
+
       const resultMem = writeStringToMemoryTinyGo(result);
-      
+
       console.log("JS: Calling process_credit_result (TinyGo)");
-      const processedResultPtr = instance.exports.process_credit_result(resultMem.ptr);
-      const processedResult = readStringFromMemory(instance, processedResultPtr, 1000);
+      const processedResultPtr = instance.exports.process_credit_result(
+        resultMem.ptr
+      );
+      const processedResult = readStringFromMemory(
+        instance,
+        processedResultPtr,
+        1000
+      );
       console.log("Processed result:", processedResult);
 
       console.log("JS: Calling execute_debit_leg (TinyGo)");
-      debitResultPtr = instance.exports.execute_debit_leg(
+      const debitResultPtr = instance.exports.execute_debit_leg(
         amountMem.ptr,
         amountMem.length,
         accountMem.ptr,
         accountMem.length
       );
-      console.log("JS: Reading debit result from memory (TinyGo)");
-      debitResult = readStringFromMemoryTinyGo(debitResultPtr);
+      const debitResult = readStringFromMemory(instance, debitResultPtr, 1000);
       console.log("Result of execute_debit_leg:", debitResult);
-
-
-     
     } else if (isRust) {
       // Rust logic
       console.log("JS: Writing amount string to memory (Rust)");
@@ -625,17 +641,16 @@ try {
       instance.exports.dealloc(addBookMem.ptr, addBookMem.len);
       instance.exports.dealloc(deleteBookMem.ptr, deleteBookMem.len);
       instance.exports.dealloc(getBookMem.ptr, getBookMem.len);
-
-      
     }
 
-    
     console.log(`Testing WASM file: ${filePath}`);
 
-    console.log("WebAssembly execution completed, waiting for RDF query to complete");
+    console.log(
+      "WebAssembly execution completed, waiting for RDF query to complete"
+    );
     await Promise.race([
       rdfQueryPromise,
-      delay(10000) // 10 second timeout
+      delay(10000), // 10 second timeout
     ]);
 
     if (!rdfQueryComplete) {
@@ -645,8 +660,6 @@ try {
     }
 
     return { success: true, creditResult };
-
-    
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
