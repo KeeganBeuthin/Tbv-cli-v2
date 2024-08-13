@@ -29,9 +29,7 @@ CMD ["py2wasm", "${fileName}", "-o", "/app/output.wasm"]
   `;
 }
 
-function generateAssemblyScriptDockerfile(filePath) {
-  const fileName = path.basename(filePath);
-
+function generateAssemblyScriptDockerfile(projectPath) {
   return `
 FROM node:latest
 
@@ -41,13 +39,20 @@ RUN npm install -g assemblyscript
 # Set working directory
 WORKDIR /app
 
-# Copy the TypeScript file into the Docker container
-COPY ${fileName} /app/${fileName}
+# Copy the entire project directory into the Docker container
+COPY . .
 
-# Change CMD to run AssemblyScript compiler manually and keep the container running
-CMD npx asc ${fileName} -o output.wasm --runtime minimal && ls -l /app || bash
+# Install project dependencies
+RUN npm install
+
+# Compile the project
+RUN npx asc index.ts -o output.wasm --runtime minimal
+
+# Copy the generated .wasm file to the mounted volume
+CMD cp output.wasm /output/output.wasm || (echo "Failed to copy .wasm file" && exit 1)
   `;
 }
+
 
 function generateRustDockerfile(directoryPath) {
   return `
@@ -71,25 +76,39 @@ CMD cp ./pkg/*_bg.wasm /output/output.wasm || (echo "Failed to copy .wasm file" 
   `;
 }
 
-function generateGoDockerfile(filePath) {
-  const fileName = path.basename(filePath);
-
+function generateGoDockerfile(projectPath) {
   return `
-FROM tinygo/tinygo:latest
+FROM golang:latest
 
 WORKDIR /app
 
-COPY ${fileName} /app/${fileName}
+# Copy the entire Go project
+COPY . .
 
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["tinygo build -o /app/output.wasm -target=wasm ${fileName} || tail -f /dev/null"]
+# Set environment variables for WebAssembly compilation
+ENV GOOS=js
+ENV GOARCH=wasm
+
+# Initialize Go module if go.mod doesn't exist
+RUN if [ ! -f go.mod ]; then go mod init myproject; fi
+
+# Download dependencies
+RUN go mod tidy
+
+# Compile the project
+RUN go build -o main.wasm .
+
+# Copy the WebAssembly support file
+RUN cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" .
+
+# Copy the generated .wasm file to the mounted volume
+CMD cp main.wasm /output/output.wasm && cp wasm_exec.js /output/wasm_exec.js
   `;
 }
 
 function generateDockerfile(language, inputPath) {
   let dockerfileContent;
-  const fileDirectory =
-    language === "rust" ? inputPath : path.dirname(inputPath);
+  const fileDirectory = inputPath;
   const fileName = path.basename(inputPath);
 
   switch (language) {
@@ -100,10 +119,10 @@ function generateDockerfile(language, inputPath) {
       // dockerfileContent = generateJavaDockerfile(inputPath);
       break;
     case "go":
-      dockerfileContent = generateGoDockerfile(fileName);
+      dockerfileContent = generateGoDockerfile(fileDirectory);
       break;
     case "assemblyscript":
-      dockerfileContent = generateAssemblyScriptDockerfile(fileName);
+      dockerfileContent = generateAssemblyScriptDockerfile(fileDirectory);
       break;
     case "rust":
       dockerfileContent = generateRustDockerfile(fileDirectory);
@@ -119,7 +138,7 @@ function generateDockerfile(language, inputPath) {
   fs.writeFileSync(dockerfilePath, dockerfileContent);
 
   const dockerImage = `${language.toLowerCase()}2wasm-image`;
-  const buildContext = language === "rust" ? inputPath : fileDirectory;
+  const buildContext = fileDirectory;
 
   exec(
     `docker build -f ${dockerfilePath} -t ${dockerImage} ${buildContext}`,
@@ -130,7 +149,7 @@ function generateDockerfile(language, inputPath) {
       }
       console.log(stdout);
 
-      if (language === "rust") {
+      if (language === "rust" || language === "go" || language === "assemblyscript") {
         exec(
           `docker run --rm -v ${fileDirectory}:/output ${dockerImage}`,
           (err, stdout, stderr) => {
@@ -141,10 +160,17 @@ function generateDockerfile(language, inputPath) {
             console.log(stdout);
 
             const wasmFilePath = path.join(fileDirectory, "output.wasm");
+            const wasmExecJsPath = language === "go" ? path.join(fileDirectory, "wasm_exec.js") : null;
+
             if (fs.existsSync(wasmFilePath)) {
               console.log(
                 `Conversion successful! The output.wasm file is located at ${wasmFilePath}`
               );
+              if (language === "go" && fs.existsSync(wasmExecJsPath)) {
+                console.log(
+                  `The wasm_exec.js file is located at ${wasmExecJsPath}`
+                );
+              }
             } else {
               console.error("Failed to generate the output.wasm file.");
             }

@@ -1,0 +1,7 @@
+[package]
+name = "rust-sdk-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+your_financial_sdk = { git = "https://github.com/KeeganBeuthin/TBV-Rust-SDK.git" }
