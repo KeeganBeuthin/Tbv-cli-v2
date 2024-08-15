@@ -47,6 +47,15 @@ async function isGoWasm(wasmBuffer) {
   }
 }
 
+async function executeRdfQuery(query) {
+  try {
+    const response = await axios.post('http://127.0.0.1:3000/rdf/query', { query });
+    return response.data;
+  } catch (error) {
+    console.error('Error executing RDF query:', error);
+    throw error;
+  }
+}
 
 async function startApiServer() {
   if (apiServer) {
@@ -75,6 +84,21 @@ async function executeWasmFile(filePath) {
     };
   });
 
+  global.executeRdfQuery = async (query) => {
+    try {
+      const result = await executeRdfQuery(query);
+      global.setQueryResult(JSON.stringify(result));
+    } catch (error) {
+      console.error('Error executing RDF query:', error);
+      global.setQueryResult(JSON.stringify({ error: error.message }));
+    }
+  };
+  
+  global.setFinalResult = (result) => {
+    console.log('Final result:', result);
+    // You can do something with the final result here
+  };
+  
   try {
 
     
@@ -113,6 +137,26 @@ async function executeWasmFile(filePath) {
           free: (ptr) => {
             console.log('free called with ptr:', ptr);
             // In this simple implementation, we don't actually free memory
+          },
+          query_rdf_tbv_cli: (queryPtr, queryLen) => {
+            const query = go.mem.loadString(queryPtr, queryLen);
+            console.log("Executing RDF query via TBV-CLI:", query);
+          
+            executeRdfQuery(query)
+              .then(result => {
+                console.log("RDF query result:", result);
+                const resultJson = JSON.stringify(result);
+                const resultPtr = go.mem.stringToPtr(resultJson);
+                go._resolveCallbackPromise(resultPtr);
+              })
+              .catch(error => {
+                console.error("Error executing RDF query:", error);
+                const errorJson = JSON.stringify({ error: error.message });
+                const errorPtr = go.mem.stringToPtr(errorJson);
+                go._resolveCallbackPromise(errorPtr);
+              });
+          
+            return 0;
           },
           'syscall/js.valueGet': () => {},
           'syscall/js.valueSet': () => {},
@@ -374,49 +418,6 @@ async function executeWasmFile(filePath) {
       },
     };
 
-    async function makeTbvCliCall(action, data) {
-      return new Promise((resolve, reject) => {
-        console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
-        const child = spawn("node", ["index.js", action, data]);
-
-        let output = "";
-        child.stdout.on("data", (data) => {
-          output += data.toString();
-          console.log(`TBV-CLI output: ${data}`);
-        });
-
-        child.stderr.on("data", (data) => {
-          console.error(`TBV-CLI Error: ${data}`);
-        });
-
-        child.on("close", (code) => {
-          if (code !== 0) {
-            reject(new Error(`TBV-CLI process exited with code ${code}`));
-          } else {
-            console.log("Full TBV-CLI output:", output);
-            try {
-              const resultStart = output.indexOf("RDF Query Result:");
-              if (resultStart !== -1) {
-                const resultJson = output
-                  .slice(resultStart + "RDF Query Result:".length)
-                  .trim();
-                console.log(`Parsed TBV-CLI result: ${resultJson}`);
-                resolve(resultJson);
-              } else {
-                reject(
-                  new Error("Failed to find RDF Query Result in TBV-CLI output")
-                );
-              }
-            } catch (error) {
-              reject(
-                new Error("Failed to parse TBV-CLI output: " + error.message)
-              );
-            }
-          }
-        });
-      });
-    }
-
     const { instance } = await WebAssembly.instantiate(
       wasmBuffer,
       importObject
@@ -533,43 +534,6 @@ async function executeWasmFile(filePath) {
 
       // Return both the pointer and the length, which is useful for Rust FFI
       return { ptr, len: len - 1 }; // Subtract 1 to not count null terminator in length
-    }
-
-    async function makeTbvCliCallSync(action, data) {
-      console.log(`Executing TBV-CLI command: ${action} with data: ${data}`);
-      const { exec } = require("child_process");
-
-      return new Promise((resolve, reject) => {
-        exec(`node index.js ${action} '${data}'`, (error, stdout, stderr) => {
-          if (error) {
-            console.error(`Error executing TBV-CLI command: ${error.message}`);
-            reject(error);
-            return;
-          }
-          if (stderr) {
-            console.error(`TBV-CLI stderr: ${stderr}`);
-          }
-          console.log(`TBV-CLI stdout: ${stdout}`);
-
-          try {
-            const resultStart = stdout.indexOf("RDF Query Result:");
-            if (resultStart !== -1) {
-              const resultJson = stdout
-                .slice(resultStart + "RDF Query Result:".length)
-                .trim();
-              console.log(`Parsed TBV-CLI result: ${resultJson}`);
-              resolve(resultJson);
-            } else {
-              reject(
-                new Error("Failed to find RDF Query Result in TBV-CLI output")
-              );
-            }
-          } catch (parseError) {
-            console.error("Error parsing TBV-CLI output:", parseError);
-            reject(parseError);
-          }
-        });
-      });
     }
 
     const amount = "100";

@@ -9,12 +9,15 @@ import (
 	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/utils"
 )
 
+var done chan struct{}
+
 func main() {
 	fmt.Println("Go program started")
-	c := make(chan struct{}, 0)
+	done = make(chan struct{})
 	js.Global().Set("runTest", js.FuncOf(runTest))
+	js.Global().Set("setQueryResult", js.FuncOf(setQueryResult))
 	fmt.Println("runTest function set in global scope")
-	<-c
+	<-done
 	fmt.Println("Go program exiting")
 }
 
@@ -25,28 +28,45 @@ func runTest(this js.Value, args []js.Value) interface{} {
 
 	fmt.Println("Executing credit leg")
 	queryPtr := transactions.ExecuteCreditLeg(utils.StringToPtr(amount), int32(len(amount)), utils.StringToPtr(account), int32(len(account)))
+	if queryPtr == nil {
+		fmt.Println("ExecuteCreditLeg returned nil")
+		return nil
+	}
 	query := utils.GoString(queryPtr, -1)
 	fmt.Printf("Generated query: %s\n", query)
 
-	result := `{"results": [{"balance": "500.00"}]}`
-	fmt.Println("Processing credit result")
-	processedResultPtr := transactions.ProcessCreditResult(utils.StringToPtr(result))
-	processedResult := utils.GoString(processedResultPtr, -1)
-	fmt.Printf("Processed result: %s\n", processedResult)
+	// Execute the RDF query by calling a JavaScript function
+	js.Global().Call("executeRdfQuery", query)
 
-	fmt.Println("runTest function completed")
-	resultMap := map[string]interface{}{
-		"query":  query,
-		"result": processedResult,
+	return nil
+}
+
+func setQueryResult(this js.Value, args []js.Value) interface{} {
+	if len(args) > 0 {
+		result := args[0].String()
+		fmt.Printf("RDF query result: %s\n", result)
+
+		fmt.Println("Processing credit result")
+		processedResultPtr := transactions.ProcessCreditResult(utils.StringToPtr(result))
+		if processedResultPtr == nil {
+			fmt.Println("ProcessCreditResult returned nil")
+			return nil
+		}
+		processedResult := utils.GoString(processedResultPtr, -1)
+		fmt.Printf("Processed result: %s\n", processedResult)
+
+		resultMap := map[string]interface{}{
+			"result": processedResult,
+		}
+
+		jsonResult, err := json.Marshal(resultMap)
+		if err != nil {
+			fmt.Println("Error marshaling result:", err)
+			return nil
+		}
+
+		js.Global().Call("setFinalResult", string(jsonResult))
 	}
 
-	// Convert the map to a JSON string
-	jsonResult, err := json.Marshal(resultMap)
-	if err != nil {
-		fmt.Println("Error marshaling result:", err)
-		return js.Null()
-	}
-
-	// Return the JSON string
-	return js.ValueOf(string(jsonResult))
+	return nil
 }
