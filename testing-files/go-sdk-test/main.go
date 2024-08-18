@@ -47,12 +47,13 @@ func setQueryResult(this js.Value, args []js.Value) interface{} {
 		fmt.Printf("RDF query result: %s\n", result)
 
 		fmt.Println("Processing credit result")
-		processedResultPtr := transactions.ProcessCreditResult(utils.StringToPtr(result))
+		processedResultPtr := transactions.ProcessCreditResult(&result)
+		var processedResult string
 		if processedResultPtr == nil {
-			fmt.Println("ProcessCreditResult returned nil")
-			return nil
+			processedResult = "Error processing credit result"
+		} else {
+			processedResult = *processedResultPtr
 		}
-		processedResult := utils.GoString(processedResultPtr, -1)
 		fmt.Printf("Processed result: %s\n", processedResult)
 
 		resultMap := map[string]interface{}{
@@ -67,6 +68,9 @@ func setQueryResult(this js.Value, args []js.Value) interface{} {
 
 		js.Global().Call("setFinalResult", string(jsonResult))
 	}
+
+	// Close the done channel to signal that the program can exit
+	close(done)
 
 	return nil
 }

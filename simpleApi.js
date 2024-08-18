@@ -24,13 +24,12 @@ app.get("/rdf", (req, res) => {
 app.post("/rdf/query", (req, res) => {
   const { query } = req.body;
   console.log("Received RDF query:", query);
-  
 
   const match = query.match(/ex:(\w+)\s+ex:hasBalance\s+\?balance/);
   if (match) {
     const account = match[1];
-    const balance = simulatedRdfStore[account] ? simulatedRdfStore[account].balance : null;
-    res.json({ results: [{ balance: balance }] });
+    const balance = simulatedRdfStore[account] ? simulatedRdfStore[account].balance : 1000; // Default to 1000 if account not found
+    res.json({ results: [{ balance: balance.toString() }] });
   } else {
     res.status(400).json({ error: "Invalid query" });
   }
