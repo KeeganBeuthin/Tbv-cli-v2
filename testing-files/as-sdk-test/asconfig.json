@@ -1,0 +1,10 @@
+{
+    "extends": "assemblyscript/std/assembly.json",
+    "entries": ["index.ts"],
+    "options": {
+      "importMemory": true,
+      "initialMemory": 2,
+      "maximumMemory": 8,
+      "runtime": "minimal"
+    }
+  }

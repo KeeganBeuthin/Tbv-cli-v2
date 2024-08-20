@@ -33,23 +33,25 @@ function generateAssemblyScriptDockerfile(projectPath) {
   return `
 FROM node:latest
 
-# Install AssemblyScript compiler
 RUN npm install -g assemblyscript
 
-# Set working directory
 WORKDIR /app
 
-# Copy the entire project directory into the Docker container
-COPY . .
+# Copy package.json and package-lock.json (if it exists)
+COPY package*.json ./
 
-# Install project dependencies
+# Install dependencies
 RUN npm install
 
+# Copy the rest of the application
+COPY . .
+
 # Compile the project
-RUN npx asc index.ts -o output.wasm --runtime minimal
+RUN npx asc -o output.wasm --runtime minimal --importMemory 
+
 
 # Copy the generated .wasm file to the mounted volume
-CMD cp output.wasm /output/output.wasm || (echo "Failed to copy .wasm file" && exit 1)
+CMD cp output.wasm /output/|| (echo "Failed to copy .wasm file" && exit 1)
   `;
 }
 

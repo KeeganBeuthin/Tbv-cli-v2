@@ -27,7 +27,7 @@ func runTest(this js.Value, args []js.Value) interface{} {
 	account := "account123"
 
 	fmt.Println("Executing credit leg")
-	queryPtr := transactions.ExecuteCreditLeg(utils.StringToPtr(amount), int32(len(amount)), utils.StringToPtr(account), int32(len(account)))
+	queryPtr := transactions.Execute_Credit_Leg(utils.StringToPtr(amount), int32(len(amount)), utils.StringToPtr(account), int32(len(account)))
 	if queryPtr == nil {
 		fmt.Println("ExecuteCreditLeg returned nil")
 		return nil
@@ -47,7 +47,7 @@ func setQueryResult(this js.Value, args []js.Value) interface{} {
 		fmt.Printf("RDF query result: %s\n", result)
 
 		fmt.Println("Processing credit result")
-		processedResultPtr := transactions.ProcessCreditResult(&result)
+		processedResultPtr := transactions.Process_Credit_Result(&result)
 		var processedResult string
 		if processedResultPtr == nil {
 			processedResult = "Error processing credit result"

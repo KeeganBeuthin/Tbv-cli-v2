@@ -1,19 +1,41 @@
-import { Transaction } from "tbv-asc-sdk";
+import {
+  execute_credit_leg,
+  process_credit_result,
+  execute_debit_leg,
+  allocateString,
+  writeString,
+  readString
+} from "tbv-asc-sdk/assembly";
 
-const transaction = new Transaction();
+// Declare the external function for making CLI calls
+declare function query_rdf_tbv_cli(queryPtr: usize, queryLen: i32): usize;
 
-const feeAccount = transaction.getFeeAccount();
-console.log("Fee Account:", feeAccount);
+export function test(): string {
+  const amount = "100.00";
+  const account = "account123";
 
-const childTransaction = transaction.createChildTransaction();
-childTransaction.setSourceAccount("sourceAccount123");
-childTransaction.setTargetAccount("targetAccount456");
-childTransaction.setTransactionValue(100000); // Assuming value in smallest units
+  // Create string pointers
+  const amountPtr = allocateString(amount.length);
+  writeString(amountPtr, amount);
+  const accountPtr = allocateString(account.length);
+  writeString(accountPtr, account);
 
-const action = childTransaction.createAction();
-action.setContractName("TestContract");
-action.setModelStringValue("subject1", "predicate1", "value1");
+  // Execute credit leg
+  const queryPtr = execute_credit_leg(amountPtr, accountPtr);
+  const query = readString(queryPtr);
 
-childTransaction.submit();
+  // Execute RDF query using CLI tool
+  const resultPtr = query_rdf_tbv_cli(queryPtr, query.length);
+  const result = readString(resultPtr);
 
-console.log("Transaction submitted");
+  // Process credit result
+  const processedResultPtr = process_credit_result(resultPtr);
+  const processedResult = readString(processedResultPtr);
+
+  // Execute debit leg
+  const debitResultPtr = execute_debit_leg(amountPtr, accountPtr);
+  const debitResult = readString(debitResultPtr);
+
+  // Combine results
+  return `{"creditResult": "${processedResult}", "debitResult": "${debitResult}"}`;
+}
