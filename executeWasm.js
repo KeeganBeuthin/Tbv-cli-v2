@@ -147,8 +147,18 @@ async function executeWasmFile(filePath) {
 
   try {
     const wasmBuffer = await promisify(fs.readFile)(filePath);
+    
+    // Log the imports that the module is expecting
+    const module = await WebAssembly.compile(wasmBuffer);
+    const imports = WebAssembly.Module.imports(module);
+    console.log("Module imports:", JSON.stringify(imports, null, 2));
+
+    const exports = WebAssembly.Module.exports(module);
+    console.log("Module exports:", JSON.stringify(exports, null, 2));
+
     const isAssemblyScriptModule = await isAssemblyScriptWasm(wasmBuffer);
     const isGoModule = await isGoWasm(wasmBuffer);
+
 
     let instance;
     if (isGoModule) {
@@ -294,32 +304,55 @@ async function executeWasmFile(filePath) {
         }
         return str;
       }
-
+      
       function writeString(str) {
+        console.log("writeString called with:", str);
         const view = new Uint8Array(memory.buffer);
         const bytes = new TextEncoder().encode(str + '\0');
-        const ptr = instance.exports.__new(bytes.length, 1);
+        
+        // Find free memory
+        let ptr = 0;
+        while (ptr < view.length) {
+          if (view[ptr] === 0) {
+            let free = true;
+            for (let i = 0; i < bytes.length; i++) {
+              if (view[ptr + i] !== 0) {
+                free = false;
+                break;
+              }
+            }
+            if (free) break;
+          }
+          ptr++;
+        }
+        
+        if (ptr + bytes.length > view.length) {
+          throw new Error("Not enough memory");
+        }
+        
         view.set(bytes, ptr);
+        console.log(`String written to memory at address ${ptr}`);
         return ptr;
       }
-
+      
+      // In the AssemblyScript part of executeWasmFile:
       const importObject = {
         env: {
           abort: (msg, file, line, column) => {
             console.error(`Abort called at ${file}:${line}:${column}: ${msg}`);
           },
           logMessage: (msgPtr, msgLen) => {
-            const bytes = new Uint8Array(memory.buffer, msgPtr, msgLen);
-            const message = new TextDecoder().decode(bytes);
+            const message = readString(msgPtr);
             console.log("WASM log:", message);
           },
           memory: memory
         },
         index: {
           query_rdf_tbv_cli: (queryPtr, queryLen) => {
+            console.log("query_rdf_tbv_cli called with:", queryPtr, queryLen);
             const query = readString(queryPtr);
             console.log("Executing RDF query via TBV-CLI:", query);
-
+      
             return new Promise((resolve) => {
               executeRdfQuery(query)
                 .then((result) => {
@@ -338,17 +371,21 @@ async function executeWasmFile(filePath) {
           }
         }
       };
-
       const result = await WebAssembly.instantiate(wasmBuffer, importObject);
       instance = result.instance;
 
-      console.log("Available exports:", Object.keys(instance.exports));
+      console.log("Instance exports:", Object.keys(instance.exports));
+
+
+      console.log("Instance exports:", Object.keys(instance.exports));
 
       global.setQueryResult = (result) => {
-        console.log("Processing credit result");
+        console.log("setQueryResult called with:", result);
         try {
           const resultPtr = writeString(result);
+          console.log("Result written to memory at:", resultPtr);
           const processedResultPtr = instance.exports.process_credit_result(resultPtr);
+          console.log("Processed result pointer:", processedResultPtr);
           const processedResult = readString(processedResultPtr);
           console.log("Processed result:", processedResult);
           
@@ -367,7 +404,14 @@ async function executeWasmFile(filePath) {
       }
 
       console.log("Executing AssemblyScript test function");
-      instance.exports.test();
+      const testResult = instance.exports.test();
+      console.log("Test function result:", testResult);
+
+      // Try to read the result as a string if it's a pointer
+      if (typeof testResult === 'number') {
+        const resultString = readString(testResult);
+        console.log("Test function result as string:", resultString);
+      }
 
       // Wait for the RDF query to complete
       await Promise.race([
@@ -383,7 +427,6 @@ async function executeWasmFile(filePath) {
     } else {
       throw new Error("Unsupported WebAssembly module type");
     }
-
     console.log(`Testing WASM file: ${filePath}`);
     console.log("WebAssembly execution completed");
 
