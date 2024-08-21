@@ -298,12 +298,11 @@ async function executeWasmFile(filePath) {
       function writeString(str) {
         const view = new Uint8Array(memory.buffer);
         const bytes = new TextEncoder().encode(str + '\0');
-        let ptr = instance.exports.__new(bytes.length, 1); // 1 is the id for ArrayBuffer
+        const ptr = instance.exports.__new(bytes.length, 1);
         view.set(bytes, ptr);
         return ptr;
       }
 
-      let queryRdfTbvCli;
       const importObject = {
         env: {
           abort: (msg, file, line, column) => {
@@ -318,81 +317,75 @@ async function executeWasmFile(filePath) {
         },
         index: {
           query_rdf_tbv_cli: (queryPtr, queryLen) => {
-            if (!queryRdfTbvCli) {
-              throw new Error("query_rdf_tbv_cli called before initialization");
-            }
-            return queryRdfTbvCli(queryPtr, queryLen);
-          },
-        },
+            const query = readString(queryPtr);
+            console.log("Executing RDF query via TBV-CLI:", query);
+
+            return new Promise((resolve) => {
+              executeRdfQuery(query)
+                .then((result) => {
+                  console.log("RDF query result:", result);
+                  const resultJson = JSON.stringify(result);
+                  const resultPtr = writeString(resultJson);
+                  resolve(resultPtr);
+                })
+                .catch((error) => {
+                  console.error("Error executing RDF query:", error);
+                  const errorJson = JSON.stringify({ error: error.message });
+                  const errorPtr = writeString(errorJson);
+                  resolve(errorPtr);
+                });
+            });
+          }
+        }
       };
 
       const result = await WebAssembly.instantiate(wasmBuffer, importObject);
       instance = result.instance;
 
-      queryRdfTbvCli = (queryPtr, queryLen) => {
-        return new Promise((resolve) => {
-          const query = readString(queryPtr);
-          console.log("Executing RDF query via TBV-CLI:", query);
-
-          executeRdfQuery(query)
-            .then((result) => {
-              console.log("RDF query result:", result);
-              const resultJson = JSON.stringify(result);
-              const resultPtr = writeString(resultJson);
-              resolve(resultPtr);
-            })
-            .catch((error) => {
-              console.error("Error executing RDF query:", error);
-              resolve(0);
-            });
-        });
-      };
-
       console.log("Available exports:", Object.keys(instance.exports));
+
+      global.setQueryResult = (result) => {
+        console.log("Processing credit result");
+        try {
+          const resultPtr = writeString(result);
+          const processedResultPtr = instance.exports.process_credit_result(resultPtr);
+          const processedResult = readString(processedResultPtr);
+          console.log("Processed result:", processedResult);
+          
+          const finalResult = { result: processedResult };
+          console.log("Final result:", finalResult);
+          global.setFinalResult(finalResult);
+          global.resolveRdfQuery();
+        } catch (error) {
+          console.error("Error processing query result:", error);
+          global.resolveRdfQuery();
+        }
+      };
 
       if (typeof instance.exports.test !== "function") {
         throw new Error("Test function not found in AssemblyScript module");
       }
 
       console.log("Executing AssemblyScript test function");
-      const testResult = instance.exports.test();
+      instance.exports.test();
 
-      const resultString = readString(testResult);
+      // Wait for the RDF query to complete
+      await Promise.race([
+        rdfQueryPromise,
+        delay(10000), // 10 second timeout
+      ]);
 
-      console.log("AssemblyScript test result:", resultString);
-
-      try {
-        // Attempt to complete the JSON if it's incomplete
-        let jsonString = resultString;
-        if (jsonString.trim().startsWith('{') && !jsonString.trim().endsWith('}')) {
-          jsonString += '}';
-        }
-        const parsedResult = JSON.parse(jsonString);
-        console.log("Parsed result:", parsedResult);
-        global.setFinalResult(parsedResult);
-      } catch (parseError) {
-        console.error("Error parsing test result:", parseError);
-        console.log("Unparsed result:", resultString);
+      if (!rdfQueryComplete) {
+        console.log("RDF query timed out");
+      } else {
+        console.log("RDF query completed successfully");
       }
     } else {
       throw new Error("Unsupported WebAssembly module type");
     }
 
     console.log(`Testing WASM file: ${filePath}`);
-
-    console.log(
-      "WebAssembly execution completed, waiting for RDF query to complete"
-    );
-    await Promise.race([
-      rdfQueryPromise,
-      delay(10000), // 10 second timeout
-    ]);
-
-    if (!rdfQueryComplete) {
-      console.log("RDF query timed out");
-    } else {
-      console.log("RDF query completed successfully");
-    }
+    console.log("WebAssembly execution completed");
 
     return { success: true, result: "WebAssembly execution completed" };
 
