@@ -293,10 +293,12 @@ async function executeWasmFile(filePath) {
       let memoryBase = 0;
       const memory = new WebAssembly.Memory({ initial: 256, maximum: 512 });
     
-      function readStringFromMemory(ptr, len) {
+      function readStringFromMemory(ptr, len, quiet = false) {
         const view = new Uint8Array(memory.buffer, ptr, len);
         const str = new TextDecoder().decode(view);
-        console.log(`Read string from memory: "${str}" (length: ${len})`);
+        if (!quiet) {
+          console.log(`Read string from memory: "${str}" (length: ${len})`);
+        }
         return str;
       }
     
@@ -323,17 +325,18 @@ async function executeWasmFile(filePath) {
           abort: (message, fileName, lineNumber, columnNumber) => {
             console.error(`Abort called at ${fileName}:${lineNumber}:${columnNumber}: ${message}`);
           },
+          logMessage: (ptr, len) => {
+            const message = readStringFromMemory(ptr, len, true);
+            console.log("WASM:", message);
+          },
           'console.log': (ptr) => {
             let len = 0;
             const view = new Uint8Array(memory.buffer, ptr);
             while (view[len] !== 0) len++;
-            const str = readStringFromMemory(ptr, len);
+            const str = readStringFromMemory(ptr, len, true);
             console.log("WASM console.log:", str);
           },
-          logMessage: (ptr, len) => {
-            const message = readStringFromMemory(ptr, len);
-            console.log("WASM:", message);
-          },
+      
           memory: memory
         },
         index: {
@@ -368,15 +371,22 @@ async function executeWasmFile(filePath) {
         };
     
         global.setQueryResult = (result) => {
-          console.log(`setQueryResult called with result: "${result}"`);
+          console.log("JavaScript: setQueryResult called");
           if (typeof instance.exports.setQueryResult !== 'function') {
             throw new Error("setQueryResult function not found in exports");
           }
           const { ptr, len } = writeStringToMemory(result);
-          console.log(`Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`);
+          console.log(`JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`);
           instance.exports.setQueryResult(ptr, len);
+          console.log("JavaScript: WASM setQueryResult finished");
         };
     
+        global.setFinalResult = (result) => {
+          console.log(`JavaScript: setFinalResult called with result: ${result}`);
+          // Your existing setFinalResult logic here
+        };
+
+        
         console.log("Executing main function");
         instance.exports.main();
     

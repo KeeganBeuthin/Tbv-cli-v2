@@ -26,11 +26,7 @@ export function setQueryResult(resultPtr: usize, resultLen: i32): void {
   console.log(`setQueryResult called with resultPtr: ${resultPtr}, resultLen: ${resultLen}`);
   const result = readString(resultPtr);
   console.log(`RDF query result: ${result}`);
-  console.log(`RDF query result length: ${result.length}`);
   console.log("Processing credit result");
-
-  // Log the exact string being passed to process_credit_result
-  console.log(`String passed to process_credit_result: "${result}"`);
 
   const processedResultPtr = process_credit_result(resultPtr);
   console.log(`Processed result pointer: ${processedResultPtr}`);
@@ -39,10 +35,11 @@ export function setQueryResult(resultPtr: usize, resultLen: i32): void {
   console.log(`Processed result: ${processedResult}`);
   console.log(`Processed result length: ${processedResult.length}`);
 
-  // Log each character of the processed result
-  for (let i = 0; i < processedResult.length; i++) {
-    console.log(`Character at index ${i}: "${processedResult.charAt(i)}" (ASCII: ${processedResult.charCodeAt(i)})`);
-  }
+  // Add diagnostic logging here
+  console.log("About to call setFinalResult");
+  setFinalResult(processedResultPtr, processedResult.length);
+  console.log("setFinalResult called");
+
 
   setFinalResult(processedResultPtr, processedResult.length);
 }
