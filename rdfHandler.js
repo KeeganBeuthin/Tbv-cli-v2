@@ -1,7 +1,6 @@
 const axios = require('axios');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-
 async function isServerRunning() {
   try {
     await axios.get('http://127.0.0.1:3000/health');
@@ -10,7 +9,6 @@ async function isServerRunning() {
     return false;
   }
 }
-
 
 async function executeRdfQuery(query, maxRetries = 2, retryDelay = 1000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -21,6 +19,11 @@ async function executeRdfQuery(query, maxRetries = 2, retryDelay = 1000) {
       return response.data;
     } catch (error) {
       console.error(`Attempt ${attempt} failed:`, error.message);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+        console.error("Response headers:", error.response.headers);
+      }
       if (error.code === 'ECONNREFUSED') {
         console.log("Checking if API server is running...");
         try {
@@ -36,6 +39,5 @@ async function executeRdfQuery(query, maxRetries = 2, retryDelay = 1000) {
     }
   }
 }
-
 
 module.exports = { executeRdfQuery };

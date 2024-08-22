@@ -47,7 +47,7 @@ RUN npm install
 COPY . .
 
 # Compile the project
-RUN npx asc -o output.wasm --runtime minimal --importMemory 
+RUN npx asc -o output.wasm --runtime minimal --importMemory --maximumMemory 512
 
 
 # Copy the generated .wasm file to the mounted volume

@@ -1,41 +1,43 @@
-import {
-  execute_credit_leg,
-  process_credit_result,
-  execute_debit_leg,
-  allocateString,
-  writeString,
-  readString
-} from "tbv-asc-sdk/assembly";
+import { execute_credit_leg, process_credit_result, execute_debit_leg, allocateString, writeString, readString } from 'tbv-asc-sdk/assembly';
 
-// Declare the external function for making CLI calls
-declare function query_rdf_tbv_cli(queryPtr: usize, queryLen: i32): usize;
+declare function executeRdfQuery(queryPtr: usize, queryLen: i32): void;
+declare function setFinalResult(resultPtr: usize, resultLen: i32): void;
 
-export function test(): string {
+export function runTest(): void {
   const amount = "100.00";
   const account = "account123";
 
-  // Create string pointers
+  console.log("Executing credit leg");
   const amountPtr = allocateString(amount.length);
-  writeString(amountPtr, amount);
   const accountPtr = allocateString(account.length);
+
+  writeString(amountPtr, amount);
   writeString(accountPtr, account);
 
-  // Execute credit leg
   const queryPtr = execute_credit_leg(amountPtr, accountPtr);
   const query = readString(queryPtr);
 
-  // Execute RDF query using CLI tool
-  const resultPtr = query_rdf_tbv_cli(queryPtr, query.length);
-  const result = readString(resultPtr);
+  console.log(`Generated query: ${query}`);
 
-  // Process credit result
+  // Execute the RDF query by calling a JavaScript function
+  executeRdfQuery(queryPtr, query.length);
+}
+
+export function setQueryResult(resultPtr: usize, resultLen: i32): void {
+  const result = readString(resultPtr);
+  console.log(`RDF query result: ${result}`);
+  console.log("Processing credit result");
+
   const processedResultPtr = process_credit_result(resultPtr);
   const processedResult = readString(processedResultPtr);
 
-  // Execute debit leg
-  const debitResultPtr = execute_debit_leg(amountPtr, accountPtr);
-  const debitResult = readString(debitResultPtr);
+  console.log(`Processed result: ${processedResult}`);
 
-  // Combine results
-  return `{"creditResult": "${processedResult}", "debitResult": "${debitResult}"}`;
+  // Instead of using JSON, we'll just pass the processed result directly
+  setFinalResult(processedResultPtr, processedResult.length);
+}
+
+export function main(): void {
+  // This function will be called when the module is instantiated
+  console.log("AssemblyScript program started");
 }
