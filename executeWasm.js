@@ -290,31 +290,31 @@ async function executeWasmFile(filePath) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
     
       let instance;
-    
-      let memoryBase = 0; // Start of our allocation area
-      
+      let memoryBase = 0;
       const memory = new WebAssembly.Memory({ initial: 256, maximum: 512 });
-
+    
       function readStringFromMemory(ptr, len) {
         const view = new Uint8Array(memory.buffer, ptr, len);
-        return new TextDecoder().decode(view);
+        const str = new TextDecoder().decode(view);
+        console.log(`Read string from memory: "${str}" (length: ${len})`);
+        return str;
       }
     
-    
       function writeStringToMemory(str) {
+        console.log(`Writing string to memory: "${str}" (length: ${str.length})`);
         const encoder = new TextEncoder();
         const encodedStr = encoder.encode(str);
         const ptr = memoryBase;
-        memoryBase += encodedStr.length + 1; // +1 for null terminator
+        memoryBase += encodedStr.length + 1;
         
-        // Ensure we have enough memory
         if (memoryBase > memory.buffer.byteLength) {
           const pages = Math.ceil((memoryBase - memory.buffer.byteLength) / 65536);
           memory.grow(pages);
         }
         
         new Uint8Array(memory.buffer).set(encodedStr, ptr);
-        new Uint8Array(memory.buffer)[ptr + encodedStr.length] = 0; // Null terminator
+        new Uint8Array(memory.buffer)[ptr + encodedStr.length] = 0;
+        console.log(`String written to memory at address: ${ptr}`);
         return { ptr, len: encodedStr.length };
       }
     
@@ -323,44 +323,20 @@ async function executeWasmFile(filePath) {
           abort: (message, fileName, lineNumber, columnNumber) => {
             console.error(`Abort called at ${fileName}:${lineNumber}:${columnNumber}: ${message}`);
           },
-          seed: () => {
-            return Date.now();
-          },
           'console.log': (ptr) => {
             let len = 0;
             const view = new Uint8Array(memory.buffer, ptr);
             while (view[len] !== 0) len++;
             const str = readStringFromMemory(ptr, len);
             console.log("WASM console.log:", str);
-    
-          },
-          executeRdfQuery: (queryPtr, queryLen) => {
-            const query = readStringFromMemory(queryPtr, queryLen);
-            console.log("Executing RDF query:", query);
-            global.executeRdfQuery(query);
-          },
-          setFinalResult: (resultPtr, resultLen) => {
-            const result = readStringFromMemory(resultPtr, resultLen);
-            console.log("Final result:", result);
-            global.setFinalResult(result);
           },
           logMessage: (ptr, len) => {
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const message = new TextDecoder().decode(
-              memory.subarray(ptr, ptr + len)
-            );
+            const message = readStringFromMemory(ptr, len);
             console.log("WASM:", message);
           },
-          memory:memory
+          memory: memory
         },
         index: {
-          logMessage: (ptr, len) => {
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const message = new TextDecoder().decode(
-              memory.subarray(ptr, ptr + len)
-            );
-            console.log("WASM:", message);
-          },
           executeRdfQuery: (queryPtr, queryLen) => {
             const query = readStringFromMemory(queryPtr, queryLen);
             console.log("Executing RDF query:", query);
@@ -370,7 +346,7 @@ async function executeWasmFile(filePath) {
             const result = readStringFromMemory(resultPtr, resultLen);
             console.log("Final result:", result);
             global.setFinalResult(result);
-          },
+          }
         }
       };
     
@@ -384,7 +360,6 @@ async function executeWasmFile(filePath) {
           throw new Error("main function not found in exports");
         }
     
-        // Set up global functions
         global.runTest = () => {
           if (typeof instance.exports.runTest !== 'function') {
             throw new Error("runTest function not found in exports");
@@ -393,10 +368,12 @@ async function executeWasmFile(filePath) {
         };
     
         global.setQueryResult = (result) => {
+          console.log(`setQueryResult called with result: "${result}"`);
           if (typeof instance.exports.setQueryResult !== 'function') {
             throw new Error("setQueryResult function not found in exports");
           }
           const { ptr, len } = writeStringToMemory(result);
+          console.log(`Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`);
           instance.exports.setQueryResult(ptr, len);
         };
     

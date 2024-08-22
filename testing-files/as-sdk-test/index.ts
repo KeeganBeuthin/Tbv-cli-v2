@@ -18,26 +18,35 @@ export function runTest(): void {
   const query = readString(queryPtr);
 
   console.log(`Generated query: ${query}`);
-
-  // Execute the RDF query by calling a JavaScript function
+  
   executeRdfQuery(queryPtr, query.length);
 }
 
 export function setQueryResult(resultPtr: usize, resultLen: i32): void {
+  console.log(`setQueryResult called with resultPtr: ${resultPtr}, resultLen: ${resultLen}`);
   const result = readString(resultPtr);
   console.log(`RDF query result: ${result}`);
+  console.log(`RDF query result length: ${result.length}`);
   console.log("Processing credit result");
 
+  // Log the exact string being passed to process_credit_result
+  console.log(`String passed to process_credit_result: "${result}"`);
+
   const processedResultPtr = process_credit_result(resultPtr);
+  console.log(`Processed result pointer: ${processedResultPtr}`);
+
   const processedResult = readString(processedResultPtr);
-
   console.log(`Processed result: ${processedResult}`);
+  console.log(`Processed result length: ${processedResult.length}`);
 
-  // Instead of using JSON, we'll just pass the processed result directly
+  // Log each character of the processed result
+  for (let i = 0; i < processedResult.length; i++) {
+    console.log(`Character at index ${i}: "${processedResult.charAt(i)}" (ASCII: ${processedResult.charCodeAt(i)})`);
+  }
+
   setFinalResult(processedResultPtr, processedResult.length);
 }
 
 export function main(): void {
-  // This function will be called when the module is instantiated
   console.log("AssemblyScript program started");
 }
