@@ -1,7 +1,17 @@
 [package]
-name = "rust-sdk-test"
+name = "tbv-rust-sdk-test"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
-your_financial_sdk = { git = "https://github.com/KeeganBeuthin/TBV-Rust-SDK.git" }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1.7"
+web-sys = { version = "0.3", features = ["console"] }
+TBV-Rust-SDK = "0.1.0"  # Make sure this matches the version you published
+
+[dependencies.getrandom]
+version = "0.2"
+features = ["js"]
