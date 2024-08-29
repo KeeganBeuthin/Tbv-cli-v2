@@ -11,14 +11,28 @@ import (
 
 var done chan struct{}
 
+func readHtmlFileWrapper() js.Func {
+	return js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) != 1 {
+			return "Invalid number of arguments"
+		}
+		content := args[0].String()
+		result, err := utils.ReadHtmlFile(content)
+		if err != nil {
+			return err.Error()
+		}
+		return result
+	})
+}
+
 func main() {
 	fmt.Println("Go program started")
 	done = make(chan struct{})
 	js.Global().Set("runTest", js.FuncOf(runTest))
 	js.Global().Set("setQueryResult", js.FuncOf(setQueryResult))
-	fmt.Println("runTest function set in global scope")
+	js.Global().Set("readHtmlFile", readHtmlFileWrapper())
+	fmt.Println("Functions set in global scope")
 	<-done
-	fmt.Println("Go program exiting")
 }
 
 func runTest(this js.Value, args []js.Value) interface{} {
@@ -70,7 +84,6 @@ func setQueryResult(this js.Value, args []js.Value) interface{} {
 	}
 
 	// Close the done channel to signal that the program can exit
-	close(done)
 
 	return nil
 }

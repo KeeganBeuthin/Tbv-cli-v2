@@ -3,6 +3,7 @@ const { promisify } = require("util");
 const { TextDecoder, TextEncoder } = require("util");
 const axios = require("axios");
 const util = require("util");
+const path = require("path");
 const { spawn } = require("child_process");
 const { exec } = require("child_process");
 const readFile = util.promisify(fs.readFile);
@@ -213,11 +214,11 @@ async function executeWasmFile(filePath) {
     if (isGoModule) {
       console.log("Detected Go-compiled WebAssembly module");
       const go = new Go();
-
+    
       let memory = new WebAssembly.Memory({ initial: 256, maximum: 256 });
       let heap = new Uint8Array(memory.buffer);
       let heapNext = 1;
-
+    
       function malloc(size) {
         const addr = heapNext;
         heapNext += size;
@@ -227,7 +228,7 @@ async function executeWasmFile(filePath) {
         }
         return addr;
       }
-
+    
       const importObject = {
         ...go.importObject,
         env: {
@@ -244,7 +245,7 @@ async function executeWasmFile(filePath) {
           query_rdf_tbv_cli: (queryPtr, queryLen) => {
             const query = go.mem.loadString(queryPtr, queryLen);
             console.log("Executing RDF query via TBV-CLI:", query);
-
+    
             executeRdfQuery(query)
               .then((result) => {
                 console.log("RDF query result:", result);
@@ -258,7 +259,7 @@ async function executeWasmFile(filePath) {
                 const errorPtr = go.mem.stringToPtr(errorJson);
                 go._resolveCallbackPromise(errorPtr);
               });
-
+    
             return 0;
           },
           "syscall/js.valueGet": () => {},
@@ -276,24 +277,21 @@ async function executeWasmFile(filePath) {
           "syscall/js.copyBytesToJS": () => {},
         },
       };
-
+    
       console.log("Instantiating Go WebAssembly module...");
       console.log("Import object keys:", Object.keys(importObject));
       console.log("Env keys:", Object.keys(importObject.env));
-
+    
       const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-
+    
       console.log("Go WebAssembly module instantiated successfully");
       console.log("Available exports:", Object.keys(result.instance.exports));
-
-
+    
       console.log("Running Go program...");
       const runPromise = go.run(result.instance);
-
-
+    
       await new Promise((resolve) => setTimeout(resolve, 100));
-
-
+    
       if (typeof global.runTest === "function") {
         console.log("Executing runTest function...");
         try {
@@ -316,8 +314,7 @@ async function executeWasmFile(filePath) {
       } else {
         console.log("runTest function not found in global scope");
       }
-
-
+    
       try {
         await Promise.race([
           runPromise,
@@ -331,14 +328,50 @@ async function executeWasmFile(filePath) {
       } catch (error) {
         console.error("Error or timeout while running Go program:", error);
       }
-
+    
       console.log("Go program execution completed or timed out");
-
+    
+      // Add readHtmlFile functionality
+      if (typeof result.instance.exports.readHtmlFile === "function") {
+        global.readHtmlFile = (htmlFilePath) => {
+          console.log("readHtmlFile called with path:", htmlFilePath);
+          try {
+            const fileContent = fs.readFileSync(htmlFilePath, 'utf8');
+            const fileContentPtr = go.mem.stringToPtr(fileContent);
+            const resultPtr = result.instance.exports.readHtmlFile(fileContentPtr);
+            const htmlContent = go.mem.loadString(resultPtr);
+            console.log("HTML content read successfully");
+            return htmlContent;
+          } catch (error) {
+            console.error("Error in readHtmlFile:", error);
+            throw error;
+          }
+        };
+        console.log("readHtmlFile function is now available globally");
+      } else {
+        console.log("readHtmlFile function not found in WebAssembly exports");
+      }
+    
+      // Start the API server after setting up readHtmlFile
+      const apiServer = await startApiServer();
+      console.log("API Server started on port:", apiServer.port);
+    
+      // Test readHtmlFile function
+      try {
+        const testHtmlPath = path.join(__dirname, 'hello-world.html');
+        const fileContent = await fs.promises.readFile(testHtmlPath, 'utf8');
+        const testContent = global.readHtmlFile(fileContent);
+        console.log("Test readHtmlFile successful. Content:", testContent.substring(0, 50) + "...");
+      } catch (error) {
+        console.error("Error testing readHtmlFile:", error);
+      }
+      
       return {
         success: true,
-        result: "Go program execution attempt completed",
+        result: "Go program execution completed",
+        apiServer: apiServer
       };
-    } else if (isAssemblyScriptModule) {
+    }else if (isAssemblyScriptModule) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
     
       let instance;

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAssembly HTML Loader</title>
+    <script>
+        function fetchAndRenderHtml() {
+            fetch('/readHtml')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.htmlContent) {
+                        document.getElementById('content').innerHTML = data.htmlContent;
+                    } else {
+                        document.getElementById('content').innerHTML = '<p>Error: Failed to load HTML content</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('content').innerHTML = '<p>Error: Failed to fetch HTML content</p>';
+                });
+        }
+    </script>
+</head>
+<body>
+    <h1>WebAssembly HTML Loader</h1>
+    <button onclick="fetchAndRenderHtml()">Load Hello World</button>
+    <div id="content"></div>
+</body>
+</html>

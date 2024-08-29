@@ -1,24 +1,35 @@
-// simpleApi.js
 const express = require("express");
 const bodyParser = require("body-parser");
+const fs = require("fs").promises;
+const path = require("path");
 
 const app = express();
+
 app.use(bodyParser.json());
 
-
-
-let rdfStore = `
-@prefix ex: <http://example.org/> .
-ex:subject ex:predicate ex:object .
-`;
+app.use(express.static(path.join(__dirname))); 
 
 let simulatedRdfStore = {
   "1234567": { balance: 1000 }
 };
 
+let wasmInstance = null;
+
+// Function to load and instantiate the WebAssembly module
+async function loadWasmModule() {
+  const wasmBuffer = await fs.readFile(path.join(__dirname, 'main.wasm'));
+  const go = new Go();
+  const result = await WebAssembly.instantiate(wasmBuffer, go.importObject);
+  wasmInstance = result.instance;
+  go.run(wasmInstance);
+  console.log("WebAssembly module loaded successfully");
+}
+
+// Load the WebAssembly module when the server starts
+loadWasmModule().catch(console.error);
 
 app.get("/rdf", (req, res) => {
-  res.json({ data: JSON.stringify(books) });
+  res.json({ data: JSON.stringify(simulatedRdfStore) });
 });
 
 app.post("/rdf/query", (req, res) => {
@@ -28,10 +39,31 @@ app.post("/rdf/query", (req, res) => {
   const match = query.match(/ex:(\w+)\s+ex:hasBalance\s+\?balance/);
   if (match) {
     const account = match[1];
-    const balance = simulatedRdfStore[account] ? simulatedRdfStore[account].balance : 1000; // Default to 1000 if account not found
+    const balance = simulatedRdfStore[account] ? simulatedRdfStore[account].balance : 1000;
     res.json({ results: [{ balance: balance.toString() }] });
   } else {
     res.status(400).json({ error: "Invalid query" });
+  }
+});
+
+// New endpoint to handle HTML file reading
+app.get("/readHtml", async (req, res) => {
+  console.log("Received request to /readHtml");
+  if (typeof global.readHtmlFile !== "function") {
+    console.error("readHtmlFile function not available in global scope");
+    return res.status(500).json({ error: "readHtmlFile function not available" });
+  }
+
+  try {
+    const htmlFilePath = path.join(__dirname, 'hello-world.html');
+    console.log("Attempting to read HTML file:", htmlFilePath);
+    const fileContent = await fs.promises.readFile(htmlFilePath, 'utf8');
+    const htmlContent = global.readHtmlFile(fileContent);
+    console.log("HTML content read successfully");
+    res.json({ htmlContent });
+  } catch (error) {
+    console.error("Error reading HTML file:", error);
+    res.status(500).json({ error: "Failed to read HTML file: " + error.message });
   }
 });
 
