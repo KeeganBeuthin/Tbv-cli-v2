@@ -331,46 +331,32 @@ async function executeWasmFile(filePath) {
     
       console.log("Go program execution completed or timed out");
     
-      // Add readHtmlFile functionality
-      if (typeof result.instance.exports.readHtmlFile === "function") {
-        global.readHtmlFile = (htmlFilePath) => {
-          console.log("readHtmlFile called with path:", htmlFilePath);
-          try {
-            const fileContent = fs.readFileSync(htmlFilePath, 'utf8');
-            const fileContentPtr = go.mem.stringToPtr(fileContent);
-            const resultPtr = result.instance.exports.readHtmlFile(fileContentPtr);
-            const htmlContent = go.mem.loadString(resultPtr);
-            console.log("HTML content read successfully");
-            return htmlContent;
-          } catch (error) {
-            console.error("Error in readHtmlFile:", error);
-            throw error;
-          }
-        };
-        console.log("readHtmlFile function is now available globally");
-      } else {
-        console.log("readHtmlFile function not found in WebAssembly exports");
-      }
-    
-      // Start the API server after setting up readHtmlFile
-      const apiServer = await startApiServer();
-      console.log("API Server started on port:", apiServer.port);
-    
-      // Test readHtmlFile function
-      try {
-        const testHtmlPath = path.join(__dirname, 'hello-world.html');
-        const fileContent = await fs.promises.readFile(testHtmlPath, 'utf8');
-        const testContent = global.readHtmlFile(fileContent);
-        console.log("Test readHtmlFile successful. Content:", testContent.substring(0, 50) + "...");
-      } catch (error) {
-        console.error("Error testing readHtmlFile:", error);
-      }
-      
-      return {
-        success: true,
-        result: "Go program execution completed",
-        apiServer: apiServer
-      };
+    // Check if readHtmlFile is available
+    if (typeof global.readHtmlFile !== "function") {
+      console.error("readHtmlFile function not found in WebAssembly exports");
+    } else {
+      console.log("readHtmlFile function is available");
+    }
+
+    // Start the API server
+    const apiServer = await startApiServer();
+    console.log("API Server started on port:", apiServer.port);
+
+    // Test readHtmlFile function
+    try {
+      const testHtmlPath = path.join(__dirname, 'hello-world.html');
+      const fileContent = await fs.readFile(testHtmlPath, 'utf8');
+      const testContent = global.readHtmlFile(fileContent);
+      console.log("Test readHtmlFile successful. Content:", testContent.substring(0, 50) + "...");
+    } catch (error) {
+      console.error("Error testing readHtmlFile:", error);
+    }
+
+    return {
+      success: true,
+      result: "Go program execution completed",
+      apiServer: apiServer
+    };
     }else if (isAssemblyScriptModule) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
     

@@ -27,12 +27,12 @@ func readHtmlFileWrapper() js.Func {
 
 func main() {
 	fmt.Println("Go program started")
-	done = make(chan struct{})
+	c := make(chan struct{}, 0)
 	js.Global().Set("runTest", js.FuncOf(runTest))
 	js.Global().Set("setQueryResult", js.FuncOf(setQueryResult))
 	js.Global().Set("readHtmlFile", readHtmlFileWrapper())
 	fmt.Println("Functions set in global scope")
-	<-done
+	<-c // This will keep the program running
 }
 
 func runTest(this js.Value, args []js.Value) interface{} {

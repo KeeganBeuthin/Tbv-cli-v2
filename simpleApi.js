@@ -57,7 +57,7 @@ app.get("/readHtml", async (req, res) => {
   try {
     const htmlFilePath = path.join(__dirname, 'hello-world.html');
     console.log("Attempting to read HTML file:", htmlFilePath);
-    const fileContent = await fs.promises.readFile(htmlFilePath, 'utf8');
+    const fileContent = await fs.readFile(htmlFilePath, 'utf8');
     const htmlContent = global.readHtmlFile(fileContent);
     console.log("HTML content read successfully");
     res.json({ htmlContent });
