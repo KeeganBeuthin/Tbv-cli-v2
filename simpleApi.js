@@ -14,19 +14,9 @@ let simulatedRdfStore = {
 };
 
 let wasmInstance = null;
+let htmlCode = "";
 
-// Function to load and instantiate the WebAssembly module
-async function loadWasmModule() {
-  const wasmBuffer = await fs.readFile(path.join(__dirname, 'main.wasm'));
-  const go = new Go();
-  const result = await WebAssembly.instantiate(wasmBuffer, go.importObject);
-  wasmInstance = result.instance;
-  go.run(wasmInstance);
-  console.log("WebAssembly module loaded successfully");
-}
 
-// Load the WebAssembly module when the server starts
-loadWasmModule().catch(console.error);
 
 app.get("/rdf", (req, res) => {
   res.json({ data: JSON.stringify(simulatedRdfStore) });
@@ -46,30 +36,20 @@ app.post("/rdf/query", (req, res) => {
   }
 });
 
-// New endpoint to handle HTML file reading
-app.get("/readHtml", async (req, res) => {
-  console.log("Received request to /readHtml");
-  if (typeof global.readHtmlFile !== "function") {
-    console.error("readHtmlFile function not available in global scope");
-    return res.status(500).json({ error: "readHtmlFile function not available" });
-  }
-
-  try {
-    const htmlFilePath = path.join(__dirname, 'hello-world.html');
-    console.log("Attempting to read HTML file:", htmlFilePath);
-    const fileContent = await fs.readFile(htmlFilePath, 'utf8');
-    const htmlContent = global.readHtmlFile(fileContent);
-    console.log("HTML content read successfully");
-    res.json({ htmlContent });
-  } catch (error) {
-    console.error("Error reading HTML file:", error);
-    res.status(500).json({ error: "Failed to read HTML file: " + error.message });
-  }
+app.get("/getHtml", (req, res) => {
+  console.log("Received request to /getHtml");
+  res.send(htmlCode);
 });
+
 
 app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
+
+function setHtmlCode(code) {
+  htmlCode = code;
+}
+
 
 const server = app.listen(3000, '127.0.0.1', () => {
   console.log("Mock API server is running on http://127.0.0.1:3000");
@@ -90,4 +70,4 @@ function closeServer() {
   });
 }
 
-module.exports = { server, closeServer };
+module.exports = { server, closeServer,setHtmlCode };

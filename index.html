@@ -4,27 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebAssembly HTML Loader</title>
-    <script>
-        function fetchAndRenderHtml() {
-            fetch('/readHtml')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.htmlContent) {
-                        document.getElementById('content').innerHTML = data.htmlContent;
-                    } else {
-                        document.getElementById('content').innerHTML = '<p>Error: Failed to load HTML content</p>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById('content').innerHTML = '<p>Error: Failed to fetch HTML content</p>';
-                });
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
         }
-    </script>
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #content {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+    </style>
 </head>
 <body>
     <h1>WebAssembly HTML Loader</h1>
-    <button onclick="fetchAndRenderHtml()">Load Hello World</button>
+    <button onclick="loadHtml()">Load Hello World</button>
     <div id="content"></div>
+
+    <script>
+        function loadHtml() {
+            fetch('/getHtml')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('content').innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading HTML:', error);
+                    document.getElementById('content').innerHTML = '<p>Error loading HTML</p>';
+                });
+        }
+    </script>
 </body>
 </html>

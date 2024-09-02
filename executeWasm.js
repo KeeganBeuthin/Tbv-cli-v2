@@ -7,6 +7,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { exec } = require("child_process");
 const readFile = util.promisify(fs.readFile);
+const { server, closeServer, setHtmlCode } = require("./simpleApi");
 const crypto = require("crypto");
 if (typeof globalThis.crypto !== "object") {
   globalThis.crypto = {
@@ -153,20 +154,30 @@ async function executeRdfQuery(query) {
   }
 }
 
-async function startApiServer() {
-  if (apiServer) {
-    console.log("API server already running");
-    return apiServer;
-  }
-  const { server, closeServer } = require("./simpleApi");
-  apiServer = { server, closeServer };
+async function startApiServer(htmlCode) {
   return new Promise((resolve) => {
-    server.on("listening", () => {
-      console.log("Mock API server is now running on http://127.0.0.1:3000");
-      resolve(apiServer);
-    });
+    if (server.listening) {
+      console.log("Server is already running");
+      setHtmlCode(htmlCode);
+      resolve({
+        server: server,
+        port: 3000,
+        close: closeServer,
+      });
+    } else {
+      server.listen(3000, '127.0.0.1', () => {
+        console.log("API server is running on http://127.0.0.1:3000");
+        setHtmlCode(htmlCode);
+        resolve({
+          server: server,
+          port: 3000,
+          close: closeServer,
+        });
+      });
+    }
   });
 }
+
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -331,32 +342,30 @@ async function executeWasmFile(filePath) {
     
       console.log("Go program execution completed or timed out");
     
-    // Check if readHtmlFile is available
-    if (typeof global.readHtmlFile !== "function") {
-      console.error("readHtmlFile function not found in WebAssembly exports");
-    } else {
-      console.log("readHtmlFile function is available");
-    }
+  
+  // Check if getHtmlCode is available
+  if (typeof global.getHtmlCode !== "function") {
+    console.error("getHtmlCode function not found in global scope");
+    return { success: false, error: "getHtmlCode function not available" };
+  }
 
-    // Start the API server
-    const apiServer = await startApiServer();
+  // Get HTML code from WebAssembly
+  const htmlCode = global.getHtmlCode();
+  console.log("Received HTML code from WebAssembly");
+
+
+    // Start the API server and pass the HTML code
+    const apiServer = await startApiServer(htmlCode);
     console.log("API Server started on port:", apiServer.port);
 
-    // Test readHtmlFile function
-    try {
-      const testHtmlPath = path.join(__dirname, 'hello-world.html');
-      const fileContent = await fs.readFile(testHtmlPath, 'utf8');
-      const testContent = global.readHtmlFile(fileContent);
-      console.log("Test readHtmlFile successful. Content:", testContent.substring(0, 50) + "...");
-    } catch (error) {
-      console.error("Error testing readHtmlFile:", error);
-    }
+
 
     return {
       success: true,
       result: "Go program execution completed",
       apiServer: apiServer
     };
+
     }else if (isAssemblyScriptModule) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
     
