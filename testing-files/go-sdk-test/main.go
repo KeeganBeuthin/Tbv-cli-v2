@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"syscall/js"
+	"unsafe"
 
 	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/transactions"
 	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/utils"
@@ -36,12 +37,31 @@ func getHtmlCode() js.Func {
 	})
 }
 
+func handleHttpRequest() js.Func {
+	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		if len(args) < 1 {
+			return "Invalid arguments"
+		}
+
+		requestJSON := args[0].String()
+		requestPtr := utils.StringToPtr(requestJSON)
+		responsePtr := transactions.HandleHttpRequest(requestPtr)
+		response := utils.PtrToString(responsePtr)
+
+		utils.Free(unsafe.Pointer(requestPtr))
+		utils.Free(unsafe.Pointer(responsePtr))
+
+		return response
+	})
+}
+
 func main() {
 	fmt.Println("Go program started")
 	c := make(chan struct{}, 0)
 	js.Global().Set("runTest", js.FuncOf(runTest))
 	js.Global().Set("setQueryResult", js.FuncOf(setQueryResult))
 	js.Global().Set("getHtmlCode", getHtmlCode())
+	js.Global().Set("handleHttpRequest", handleHttpRequest())
 	fmt.Println("Functions set in global scope")
 	<-c // This will keep the program running
 }
