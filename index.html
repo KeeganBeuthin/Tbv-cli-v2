@@ -3,42 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebAssembly HTML Loader</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        #content {
-            margin-top: 20px;
-            padding: 20px;
-            border: 1px solid #ccc;
-        }
-    </style>
+    <title>WebAssembly API Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body>
-    <h1>WebAssembly HTML Loader</h1>
-    <button onclick="loadHtml()">Load Hello World</button>
-    <div id="content"></div>
+    <h1>WebAssembly API Test</h1>
+    <button onclick="getData()">Get Data</button>
+    <button onclick="postData()">Post Data</button>
+    <button onclick="putData()">Put Data</button>
+    <button onclick="deleteData()">Delete Data</button>
+    <div id="result"></div>
 
     <script>
-        function loadHtml() {
-            fetch('/getHtml')
-                .then(response => response.text())
-                .then(html => {
-                    document.getElementById('content').innerHTML = html;
-                })
-                .catch(error => {
-                    console.error('Error loading HTML:', error);
-                    document.getElementById('content').innerHTML = '<p>Error loading HTML</p>';
+        async function makeRequest(method, data = null) {
+            try {
+                const response = await axios({
+                    method: method,
+                    url: '/api/data',
+                    data: data
                 });
+                document.getElementById('result').innerText = JSON.stringify(response.data, null, 2);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('result').innerText = 'Error: ' + error.message;
+            }
+        }
+
+        function getData() {
+            makeRequest('get');
+        }
+
+        function postData() {
+            makeRequest('post', { key: 'value' });
+        }
+
+        function putData() {
+            makeRequest('put', { key: 'updated value' });
+        }
+
+        function deleteData() {
+            makeRequest('delete');
         }
     </script>
 </body>

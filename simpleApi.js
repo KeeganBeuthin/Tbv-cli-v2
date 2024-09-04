@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs").promises;
 const path = require("path");
+const { handleWasmRequest } = require("./executeWasm");
 
 const app = express();
 
@@ -19,6 +20,26 @@ let htmlCode = "";
 app.get("/rdf", (req, res) => {
   res.json({ data: JSON.stringify(simulatedRdfStore) });
 });
+
+app.all("/api/*", async (req, res) => {
+  console.log(`Received ${req.method} request to ${req.path}`);
+  
+  const requestData = {
+    method: req.method,
+    path: req.path,
+    headers: req.headers,
+    body: req.body,
+  };
+
+  try {
+    const response = await handleWasmRequest(requestData);
+    res.status(response.statusCode).set(response.headers).send(response.body);
+  } catch (error) {
+    console.error("Error handling request:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
 
 app.post("/rdf/query", (req, res) => {
   const { query } = req.body;
@@ -49,23 +70,24 @@ function setHtmlCode(code) {
   htmlCode = code;
 }
 
-const server = app.listen(3000, "127.0.0.1", () => {
-  console.log("Mock API server is running on http://127.0.0.1:3000");
-});
+// const server = app.listen(3000, "127.0.0.1", () => {
+//   console.log("Mock API server is running on http://127.0.0.1:3000");
+// });
 
-server.on("error", (error) => {
-  console.error("Error in mock API server:", error);
-});
+// server.on("error", (error) => {
+//   console.error("Error in mock API server:", error);
+// });
 
-server.on("close", () => {
-  console.log("Mock API server is shutting down");
-});
+// server.on("close", () => {
+//   console.log("Mock API server is shutting down");
+// });
 
-function closeServer() {
-  console.log("closeServer function called");
-  server.close(() => {
-    console.log("Server closed through closeServer function");
-  });
-}
 
-module.exports = { server, closeServer, setHtmlCode };
+// function closeServer() {
+//   console.log("closeServer function called");
+//   server.close(() => {
+//     console.log("Server closed through closeServer function");
+//   });
+// }
+
+// module.exports = { server, closeServer, setHtmlCode };

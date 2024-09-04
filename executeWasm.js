@@ -19,10 +19,12 @@ if (typeof globalThis.crypto !== "object") {
 const execPromise = util.promisify(exec);
 
 let apiServer = null;
+let wasmInstance = null;
 
 require("./wasm_exec.js");
 /** @type {typeof import('./wasm_exec').Go} */
 const Go = globalThis.Go;
+
 
 console.log("wasm_exec.js loaded successfully");
 console.log(Go);
@@ -38,14 +40,8 @@ async function isGoWasm(wasmBuffer) {
     const exports = WebAssembly.Module.exports(module);
     const imports = WebAssembly.Module.imports(module);
 
-    console.log(
-      "Available exports:",
-      exports.map((exp) => exp.name)
-    );
-    console.log(
-      "Required imports:",
-      imports.map((imp) => `${imp.module}.${imp.name}`)
-    );
+    console.log("Available exports:", exports.map((exp) => exp.name));
+    console.log("Required imports:", imports.map((imp) => `${imp.module}.${imp.name}`));
 
     const requiredExports = ["run", "resume", "getsp"];
     const hasRequiredExports = requiredExports.every((exp) =>
@@ -65,6 +61,7 @@ async function isGoWasm(wasmBuffer) {
     return false;
   }
 }
+
 
 async function isRustWasm(wasmBuffer) {
   try {
@@ -240,6 +237,7 @@ async function executeWasmFile(filePath) {
       console.log("Detected Go-compiled WebAssembly module");
       const go = new Go();
 
+      
       let memory = new WebAssembly.Memory({ initial: 256, maximum: 256 });
       let heap = new Uint8Array(memory.buffer);
       let heapNext = 1;
@@ -308,12 +306,13 @@ async function executeWasmFile(filePath) {
       console.log("Env keys:", Object.keys(importObject.env));
 
       const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-
+      const instance = result.instance;
+      
       console.log("Go WebAssembly module instantiated successfully");
       console.log("Available exports:", Object.keys(result.instance.exports));
 
       console.log("Running Go program...");
-      const runPromise = go.run(result.instance);
+      go.run(instance);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -356,22 +355,7 @@ async function executeWasmFile(filePath) {
 
       console.log("Go program execution completed or timed out");
 
-      if (typeof global.getHtmlCode !== "function") {
-        console.error("getHtmlCode function not found in global scope");
-        return { success: false, error: "getHtmlCode function not available" };
-      }
-
-      const htmlCode = global.getHtmlCode();
-      console.log("Received HTML code from WebAssembly");
-
-      const apiServer = await startApiServer(htmlCode);
-      console.log("API Server started on port:", apiServer.port);
-
-      return {
-        success: true,
-        result: "Go program execution completed",
-        apiServer: apiServer,
-      };
+      
     } else if (isAssemblyScriptModule) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
 

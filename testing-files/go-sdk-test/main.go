@@ -6,6 +6,7 @@ import (
 	"syscall/js"
 	"unsafe"
 
+	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/http"
 	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/transactions"
 	"github.com/KeeganBeuthin/TBV-Go-SDK/pkg/utils"
 )
@@ -36,23 +37,44 @@ func getHtmlCode() js.Func {
 		return processedHtml
 	})
 }
-
 func handleHttpRequest() js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Recovered from panic in handleHttpRequest: %v\n", r)
+			}
+		}()
+
 		if len(args) < 1 {
-			return "Invalid arguments"
+			return createErrorResponse("Invalid arguments")
 		}
 
 		requestJSON := args[0].String()
-		requestPtr := utils.StringToPtr(requestJSON)
-		responsePtr := transactions.HandleHttpRequest(requestPtr)
-		response := utils.PtrToString(responsePtr)
+		responsePtr := http.HandleHttpRequest(utils.StringToPtr(requestJSON))
 
-		utils.Free(unsafe.Pointer(requestPtr))
+		// Convert *byte to string
+		responseString := utils.PtrToString(responsePtr)
+
+		// Free the memory allocated by HandleHttpRequest
 		utils.Free(unsafe.Pointer(responsePtr))
 
-		return response
+		// Ensure response is always a valid JSON string
+		if responseString == "" {
+			return createErrorResponse("Internal server error")
+		}
+
+		return responseString
 	})
+}
+
+func createErrorResponse(message string) string {
+	errorResponse := map[string]interface{}{
+		"statusCode": 500,
+		"headers":    map[string]string{"Content-Type": "application/json"},
+		"body":       map[string]string{"error": message},
+	}
+	jsonResponse, _ := json.Marshal(errorResponse)
+	return string(jsonResponse)
 }
 
 func main() {
