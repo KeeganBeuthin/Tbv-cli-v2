@@ -1,6 +1,8 @@
 use std::ffi::{CString, CStr};
 use std::os::raw::{c_char, c_int};
 use TBV_Rust_SDK_2::{execute_credit_leg, process_credit_result, handle_http_request as sdk_handle_http_request};
+use std::cell::Cell;
+
 
 #[no_mangle]
 pub extern "C" fn run_test(amount_ptr: *const c_char, amount_len: c_int, account_ptr: *const c_char, account_len: c_int) -> *mut c_char {
@@ -25,9 +27,52 @@ pub extern "C" fn set_query_result(result_ptr: *const c_char, result_len: c_int,
     CString::new(processed_result).unwrap().into_raw()
 }
 
+thread_local! {
+    static RECURSION_DEPTH: Cell<u32> = Cell::new(0);
+}
+
 #[no_mangle]
 pub extern "C" fn handle_http_request(request_ptr: *const c_char) -> *mut c_char {
-    sdk_handle_http_request(request_ptr)
+    let current_depth = RECURSION_DEPTH.with(|depth| {
+        let current = depth.get();
+        depth.set(current + 1);
+        current
+    });
+
+    eprintln!("Rust: Entering handle_http_request, depth: {}", current_depth);
+
+    let result = if current_depth > 10 {
+        eprintln!("Rust: Max recursion depth exceeded");
+        "{\"error\":\"Max recursion depth exceeded\"}".to_string()
+    } else {
+        unsafe {
+            let request_str = CStr::from_ptr(request_ptr).to_str().unwrap_or("Invalid UTF-8");
+            eprintln!("Rust: Received request: {}", request_str);
+            
+            let response_ptr = sdk_handle_http_request(request_ptr);
+            let response_str = CStr::from_ptr(response_ptr).to_str().unwrap_or("Invalid UTF-8");
+            eprintln!("Rust: SDK response: {}", response_str);
+            
+            response_str.to_string()
+        }
+    };
+
+    RECURSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    eprintln!("Rust: Exiting handle_http_request, depth: {}", current_depth);
+    eprintln!("Rust: Final result (len: {}): {:?}", result.len(), result);
+
+    // Ensure we're creating a clean CString without any unexpected characters
+    let clean_result = result.trim().to_string();
+    match CString::new(clean_result) {
+        Ok(c_str) => {
+            eprintln!("Rust: CString created successfully");
+            c_str.into_raw()
+        },
+        Err(e) => {
+            eprintln!("Rust: Error creating CString: {:?}", e);
+            CString::new("{\"error\":\"Internal error\"}").unwrap().into_raw()
+        }
+    }
 }
 
 #[no_mangle]

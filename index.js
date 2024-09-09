@@ -6,6 +6,7 @@ const { generateDockerfile } = require("./conversion_dockerfile");
 const { executeWasmFile } = require("./executeWasm");
 const { executeRdfQuery } = require('./rdfHandler');
 const { startServer } = require('./httpApi');
+const { startRustServer } = require('./rustHttpApi');
 
 const program = new Command();
 
@@ -83,6 +84,33 @@ program
       process.exit(1);
     }
   });
+
+  program
+  .command("serve-rust <wasmFile>")
+  .description("Start an HTTP server using the specified Rust WebAssembly file")
+  .option("-p, --port <number>", "Port to run the server on", 3000)
+  .action(async (wasmFile, options) => {
+    const filePath = path.resolve(wasmFile);
+    if (!fs.existsSync(filePath)) {
+      console.error(`WASM file ${filePath} does not exist.`);
+      process.exit(1);
+    }
+
+    try {
+      const server = await startRustServer(filePath, options.port);
+      process.on('SIGINT', () => {
+        console.log('Shutting down Rust server...');
+        server.close(() => {
+          console.log('Rust server shut down successfully');
+          process.exit(0);
+        });
+      });
+    } catch (error) {
+      console.error("Failed to start Rust server:", error);
+      process.exit(1);
+    }
+  });
+
 
 program.parse(process.argv);
 
