@@ -3,7 +3,6 @@ use std::os::raw::{c_char, c_int};
 use TBV_Rust_SDK_2::{execute_credit_leg, process_credit_result, handle_http_request as sdk_handle_http_request};
 use std::cell::Cell;
 
-
 #[no_mangle]
 pub extern "C" fn run_test(amount_ptr: *const c_char, amount_len: c_int, account_ptr: *const c_char, account_len: c_int) -> *mut c_char {
     let query_ptr = execute_credit_leg(amount_ptr as *const u8, amount_len as usize, account_ptr as *const u8, account_len as usize);
@@ -32,14 +31,14 @@ thread_local! {
 }
 
 #[no_mangle]
-pub extern "C" fn handle_http_request(request_ptr: *const c_char) -> *mut c_char {
+pub extern "C" fn custom_handle_http_request(request_ptr: *const c_char) -> *mut c_char {
     let current_depth = RECURSION_DEPTH.with(|depth| {
         let current = depth.get();
         depth.set(current + 1);
         current
     });
 
-    eprintln!("Rust: Entering handle_http_request, depth: {}", current_depth);
+    eprintln!("Rust: Entering custom_handle_http_request, depth: {}", current_depth);
 
     let result = if current_depth > 10 {
         eprintln!("Rust: Max recursion depth exceeded");
@@ -58,10 +57,9 @@ pub extern "C" fn handle_http_request(request_ptr: *const c_char) -> *mut c_char
     };
 
     RECURSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
-    eprintln!("Rust: Exiting handle_http_request, depth: {}", current_depth);
+    eprintln!("Rust: Exiting custom_handle_http_request, depth: {}", current_depth);
     eprintln!("Rust: Final result (len: {}): {:?}", result.len(), result);
 
-    // Ensure we're creating a clean CString without any unexpected characters
     let clean_result = result.trim().to_string();
     match CString::new(clean_result) {
         Ok(c_str) => {
@@ -94,17 +92,5 @@ pub extern "C" fn get_html_code() -> *mut c_char {
     CString::new(html_code).unwrap().into_raw()
 }
 
-#[no_mangle]
-pub extern "C" fn dealloc_str(ptr: *mut c_char) {
-    unsafe {
-        if !ptr.is_null() {
-            let _ = CString::from_raw(ptr);
-        }
-    }
-}
-
-// Remove the init function as it's likely defined in the SDK
-// #[no_mangle]
-// pub extern "C" fn init() {
-//     println!("Rust program started");
-// }
+// Remove the dealloc_str function to avoid conflict with the SDK
+// If you need a custom deallocation function, you can add it with a different name
