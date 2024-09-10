@@ -96,9 +96,9 @@ async function initWasmForHttp(filePath) {
             console.log("JS: Raw response from Wasm:", response);
             
             // Extract only the JSON part of the response
-            const jsonMatch = response.match(/^\s*(\{.*\})/);
+            const jsonMatch = response.match(/(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/);
             if (jsonMatch) {
-                response = jsonMatch[1];
+                response = jsonMatch[0].trim();
             } else {
                 throw new Error("Unable to extract valid JSON from response");
             }
