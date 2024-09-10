@@ -2,6 +2,9 @@ const fs = require("fs").promises;
 const path = require("path");
 const { executeRdfQuery } = require('./rdfHandler');
 
+
+
+
 async function initWasmForHttp(filePath) {
   let instance;
 
@@ -59,7 +62,7 @@ async function initWasmForHttp(filePath) {
       const bytes = memory.subarray(ptr, ptr + len);
       return new TextDecoder().decode(bytes);
     }
-
+    
     function allocateStringInMemory(str) {
       const bytes = new TextEncoder().encode(str + '\0');
       const ptr = instance.exports.alloc(bytes.length);
@@ -69,63 +72,65 @@ async function initWasmForHttp(filePath) {
     }
 
     return {
-        success: true,
-        handleHttpRequest: (requestData) => {
-            console.log("JS: Entering handleHttpRequest");
-            console.log("JS: Request data:", JSON.stringify(requestData, null, 2));
+      success: true,
+      handleHttpRequest: (requestData) => {
+        console.log("JS: Entering handleHttpRequest");
+        console.log("JS: Request data:", JSON.stringify(requestData, null, 2));
+        
+        try {
+            console.log("JS: Allocating memory for request");
+            const requestPtr = allocateStringInMemory(JSON.stringify(requestData));
+            console.log("JS: Request allocated at ptr:", requestPtr);
             
-            try {
-              console.log("JS: Allocating memory for request");
-              const requestPtr = allocateStringInMemory(JSON.stringify(requestData));
-              console.log("JS: Request allocated at ptr:", requestPtr);
-              
-              console.log("JS: Calling Wasm handle_http_request function");
-              let responsePtr;
-              try {
-                responsePtr = instance.exports.handle_http_request(requestPtr);
-              } catch (wasmError) {
-                console.error("JS: Error in Wasm function execution:", wasmError);
-                console.error("JS: Error stack:", wasmError.stack);
-                throw wasmError;
-              }
-              console.log("JS: Wasm function returned, response ptr:", responsePtr);
-              
-              if (responsePtr === 0 || responsePtr === null) {
+            console.log("JS: Calling Wasm handle_http_request function");
+            const responsePtr = instance.exports.handle_http_request(requestPtr);
+            console.log("JS: Wasm function returned, response ptr:", responsePtr);
+            
+            if (responsePtr === 0 || responsePtr === null) {
                 console.error("JS: Null or zero pointer returned from Wasm function");
                 throw new Error("Invalid response from Wasm function");
-              }
-              
-              console.log("JS: Reading response from memory");
-              let response = getStringFromMemory(responsePtr, 1024); // Adjust size as needed
-              console.log("JS: Raw response from Wasm:", response);
-              
-              // Aggressively clean the response string
-              response = response.replace(/[^\x20-\x7E]/g, '').trim();
-              response = response.replace(/[^{}[\],:"\-\d\w\s]/g, '');
-              console.log("JS: Cleaned response:", response);
-              
-              console.log("JS: Deallocating response memory");
-              instance.exports.dealloc_str(responsePtr);
-              
-              console.log("JS: Parsing response");
-              const parsedResponse = JSON.parse(response);
-              console.log("JS: Parsed response:", parsedResponse);
-              
-              console.log("JS: Exiting handleHttpRequest");
-              return parsedResponse;
-            } catch (error) {
-              console.error("JS: Error in handleHttpRequest:", error);
-              console.error("JS: Error stack:", error.stack);
-              return { statusCode: 500, headers: {}, body: JSON.stringify({ error: "Internal Server Error", details: error.message }) };
             }
-          },
-        memory: instance.exports.memory,
-      };
-      
-  } catch (error) {
-    console.error("Error initializing WASM for HTTP:", error);
-    return { success: false, error: error.message };
-  }
+            
+            console.log("JS: Reading response from memory");
+            let response = getStringFromMemory(responsePtr, 2048); // Increased buffer size
+            console.log("JS: Raw response from Wasm:", response);
+            
+            // Extract only the JSON part of the response
+            const jsonMatch = response.match(/^\s*(\{.*\})/);
+            if (jsonMatch) {
+                response = jsonMatch[1];
+            } else {
+                throw new Error("Unable to extract valid JSON from response");
+            }
+            console.log("JS: Extracted JSON response:", response);
+            
+            console.log("JS: Deallocating response memory");
+            instance.exports.dealloc_str(responsePtr);
+            
+            console.log("JS: Parsing response");
+            const parsedResponse = JSON.parse(response);
+            console.log("JS: Parsed response:", parsedResponse);
+            
+            console.log("JS: Exiting handleHttpRequest");
+            return parsedResponse;
+        } catch (error) {
+            console.error("JS: Error in handleHttpRequest:", error);
+            console.error("JS: Error stack:", error.stack);
+            return { 
+                statusCode: 500, 
+                headers: {}, 
+                body: JSON.stringify({ error: "Internal Server Error", details: error.message }) 
+            };
+        }
+    },
+      memory: instance.exports.memory,
+  };
+    
+} catch (error) {
+  console.error("Error initializing WASM for HTTP:", error);
+  return { success: false, error: error.message };
 }
+}
+
 
 module.exports = { initWasmForHttp };
