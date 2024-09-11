@@ -11,9 +11,10 @@
   "license": "ISC",
   "devDependencies": {
     "@assemblyscript/loader": "^0.27.29",
-    "assemblyscript": "^0.27.29"
+    "assemblyscript": "^0.27.29",
+    "assemblyscript-json": "^1.1.0"
   },
   "dependencies": {
-    "tbv-asc-sdk": "^1.0.25"
+    "tbv-asc-sdk": "^1.0.26"
   }
 }

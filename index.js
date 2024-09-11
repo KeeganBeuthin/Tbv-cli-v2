@@ -7,6 +7,7 @@ const { executeWasmFile } = require("./executeWasm");
 const { executeRdfQuery } = require('./rdfHandler');
 const { startServer } = require('./httpApi');
 const { startRustServer } = require('./rustHttpApi');
+const { startAssemblyScriptServer } = require('./ascHttpApi');
 
 const program = new Command();
 
@@ -107,6 +108,32 @@ program
       });
     } catch (error) {
       console.error("Failed to start Rust server:", error);
+      process.exit(1);
+    }
+  });
+
+  program
+  .command("serve-asc <wasmFile>")
+  .description("Start an HTTP server using the specified AssemblyScript WebAssembly file")
+  .option("-p, --port <number>", "Port to run the server on", 3000)
+  .action(async (wasmFile, options) => {
+    const filePath = path.resolve(wasmFile);
+    if (!fs.existsSync(filePath)) {
+      console.error(`WASM file ${filePath} does not exist.`);
+      process.exit(1);
+    }
+
+    try {
+      const server = await startAssemblyScriptServer(filePath, options.port);
+      process.on('SIGINT', () => {
+        console.log('Shutting down AssemblyScript server...');
+        server.close(() => {
+          console.log('AssemblyScript server shut down successfully');
+          process.exit(0);
+        });
+      });
+    } catch (error) {
+      console.error("Failed to start AssemblyScript server:", error);
       process.exit(1);
     }
   });
