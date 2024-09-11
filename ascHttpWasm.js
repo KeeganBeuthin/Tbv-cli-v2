@@ -66,23 +66,37 @@ async function initWasmForHttp(filePath) {
           const requestJson = JSON.stringify(requestData);
           const requestPtr = instance.exports.allocateString(requestJson.length);
           writeStringToMemory(requestJson, requestPtr);
-  
+      
           console.log("JS: Calling Wasm handleHttpRequest function");
           const responsePtr = instance.exports.handleHttpRequest(requestPtr);
-  
+      
           if (responsePtr === 0) {
             throw new Error("Null pointer returned from Wasm function");
           }
-  
+      
           console.log("JS: Reading response from memory");
-          // Use our own readStringFromMemory function instead of instance.exports.readString
-          const responseJson = readStringFromMemory(responsePtr, 1024, true);
-  
+          let responseJson = readStringFromMemory(responsePtr, 1024, true);
+      
           console.log("JS: Raw response from Wasm:", responseJson);
-  
+      
+          // Remove any control characters from the response
+          responseJson = responseJson.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
+      
+          console.log("JS: Cleaned response:", responseJson);
+      
           console.log("JS: Parsing response");
           const parsedResponse = JSON.parse(responseJson);
-  
+          
+          // If the body is a string, try to parse it as JSON
+          if (typeof parsedResponse.body === 'string') {
+            try {
+              parsedResponse.body = JSON.parse(parsedResponse.body);
+            } catch (e) {
+              console.log("JS: Body is not a valid JSON, keeping it as a string");
+            }
+          }
+      
+          console.log("JS: Parsed response:", parsedResponse);
           console.log("JS: Exiting handleHttpRequest");
           return parsedResponse;
         } catch (error) {
