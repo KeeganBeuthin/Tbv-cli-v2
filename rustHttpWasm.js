@@ -62,6 +62,36 @@ async function initWasmForHttp(filePath) {
       const bytes = memory.subarray(ptr, ptr + len);
       return new TextDecoder().decode(bytes);
     }
+
+    function readStringFromMemory(ptr) {
+      const memory = new Uint8Array(instance.exports.memory.buffer);
+      let end = ptr;
+      while (memory[end] !== 0) end++;  // Find null terminator
+      return new TextDecoder().decode(memory.subarray(ptr, end));
+    }
+    
+    function allocateString(str) {
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(str + '\0');  // Add null terminator
+      
+      let ptr;
+      if (instance.exports.allocateString) {
+        ptr = instance.exports.allocateString(buffer.length);
+      } else {
+        // Fallback: Assume linear memory and just get the end of the current memory
+        ptr = instance.exports.__heap_base || 0;
+        const currentMemory = instance.exports.memory.buffer.byteLength;
+        if (ptr + buffer.length > currentMemory) {
+          const numPages = Math.ceil((ptr + buffer.length - currentMemory) / 65536);
+          instance.exports.memory.grow(numPages);
+        }
+      }
+      
+      const memory = new Uint8Array(instance.exports.memory.buffer);
+      memory.set(buffer, ptr);
+      return ptr;
+    }
+
     
     function allocateStringInMemory(str) {
       const bytes = new TextEncoder().encode(str + '\0');
@@ -71,6 +101,7 @@ async function initWasmForHttp(filePath) {
       return ptr;
     }
 
+    
     return {
       success: true,
       handleHttpRequest: (requestData) => {
@@ -78,42 +109,28 @@ async function initWasmForHttp(filePath) {
         console.log("JS: Request data:", JSON.stringify(requestData, null, 2));
         
         try {
-            console.log("JS: Allocating memory for request");
-            const requestPtr = allocateStringInMemory(JSON.stringify(requestData));
-            console.log("JS: Request allocated at ptr:", requestPtr);
-            
-            console.log("JS: Calling Wasm handle_http_request function");
-            const responsePtr = instance.exports.handle_http_request(requestPtr);
-            console.log("JS: Wasm function returned, response ptr:", responsePtr);
-            
-            if (responsePtr === 0 || responsePtr === null) {
-                console.error("JS: Null or zero pointer returned from Wasm function");
-                throw new Error("Invalid response from Wasm function");
-            }
-            
-            console.log("JS: Reading response from memory");
-            let response = getStringFromMemory(responsePtr, 2048); // Increased buffer size
-            console.log("JS: Raw response from Wasm:", response);
-            
-            // Extract only the JSON part of the response
-            const jsonMatch = response.match(/(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/);
-            if (jsonMatch) {
-                response = jsonMatch[0].trim();
-            } else {
-                throw new Error("Unable to extract valid JSON from response");
-            }
-            console.log("JS: Extracted JSON response:", response);
-            
-            console.log("JS: Deallocating response memory");
+          const requestJson = JSON.stringify(requestData);
+          const requestPtr = allocateString(requestJson);
+          
+          console.log("JS: Calling Wasm handle_http_request function");
+          const responsePtr = instance.exports.handle_http_request(requestPtr);
+          
+          console.log("JS: Reading response from memory");
+          const responseJson = readStringFromMemory(responsePtr);
+          console.log("JS: Raw response from Wasm:", responseJson);
+          
+          console.log("JS: Parsing response");
+          const parsedResponse = JSON.parse(responseJson);
+          
+          console.log("JS: Parsed response:", parsedResponse);
+          
+          // Don't forget to deallocate the memory if a deallocation function is provided
+          if (instance.exports.dealloc_str) {
             instance.exports.dealloc_str(responsePtr);
-            
-            console.log("JS: Parsing response");
-            const parsedResponse = JSON.parse(response);
-            console.log("JS: Parsed response:", parsedResponse);
-            
-            console.log("JS: Exiting handleHttpRequest");
-            return parsedResponse;
-        } catch (error) {
+          }
+          
+          return parsedResponse;
+        }  catch (error) {
             console.error("JS: Error in handleHttpRequest:", error);
             console.error("JS: Error stack:", error.stack);
             return { 
