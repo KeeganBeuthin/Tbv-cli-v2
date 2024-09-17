@@ -67,35 +67,29 @@ async function isRustWasm(wasmBuffer) {
     const exports = WebAssembly.Module.exports(module);
     const imports = WebAssembly.Module.imports(module);
 
-    console.log(
-      "Available exports:",
-      exports.map((exp) => exp.name)
-    );
-    console.log(
-      "Required imports:",
-      imports.map((imp) => `${imp.module}.${imp.name}`)
-    );
+    console.log("Rust detection - Available exports:", exports.map((exp) => exp.name));
+    console.log("Rust detection - Required imports:", imports.map((imp) => `${imp.module}.${imp.name}`));
 
     const requiredExports = [
       "memory",
+      "run_test",
       "execute_credit_leg",
+      "set_query_result",
       "process_credit_result",
-      "execute_debit_leg",
-      "alloc",
-      "dealloc",
+      "custom_handle_http_request",
     ];
     const hasRequiredExports = requiredExports.every((exp) =>
       exports.some((e) => e.name === exp)
     );
 
-    const hasWbindgenImports = imports.some(
-      (imp) => imp.module === "__wbindgen_placeholder__"
+    const hasRustImports = imports.some(
+      (imp) => imp.module === "env" && imp.name === "log_message"
     );
 
-    console.log("Has required Rust exports:", hasRequiredExports);
-    console.log("Has wbindgen imports:", hasWbindgenImports);
+    console.log("Rust detection - Has required Rust exports:", hasRequiredExports);
+    console.log("Rust detection - Has Rust imports:", hasRustImports);
 
-    return hasRequiredExports && hasWbindgenImports;
+    return hasRequiredExports && hasRustImports;
   } catch (error) {
     console.error("Error during Rust WASM detection:", error);
     return false;
@@ -463,69 +457,9 @@ async function executeWasmFile(filePath) {
       console.log("Detected Rust-compiled WebAssembly module");
 
       const importObject = {
-        __wbindgen_placeholder__: {
-          __wbindgen_string_new: (ptr, len) => {
-            console.log(
-              "__wbindgen_string_new called with ptr:",
-              ptr,
-              "len:",
-              len
-            );
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const slice = memory.subarray(ptr, ptr + len);
-            const text = new TextDecoder().decode(slice);
-            console.log("Decoded text:", text);
-            return text;
-          },
-          __wbindgen_throw: (ptr, len) => {
-            console.log("__wbindgen_throw called with ptr:", ptr, "len:", len);
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const slice = memory.subarray(ptr, ptr + len);
-            const text = new TextDecoder().decode(slice);
-            console.error("Rust threw an error:", text);
-            throw new Error(text);
-          },
-          __wbg_log_b103404cc5920657: (ptr, len) => {
-            console.log(
-              "__wbg_log_b103404cc5920657 called with ptr:",
-              ptr,
-              "len:",
-              len
-            );
-            if (ptr === 0 || len === undefined) {
-              console.log("Rust log: (empty or invalid log)");
-              return;
-            }
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const slice = memory.subarray(ptr, ptr + len);
-            console.log("Rust log:", new TextDecoder().decode(slice));
-          },
-          __wbg_new_abda76e883ba8a5f: () => {
-            console.log("__wbg_new_abda76e883ba8a5f called");
-            return {};
-          },
-          __wbg_stack_658279fe44541cf6: (arg0, arg1) => {
-            console.log(
-              "__wbg_stack_658279fe44541cf6 called with:",
-              arg0,
-              arg1
-            );
-            return 0;
-          },
-          __wbg_error_f851667af71bcfc6: (arg0, arg1) => {
-            console.error(
-              "__wbg_error_f851667af71bcfc6 called with:",
-              arg0,
-              arg1
-            );
-          },
-          __wbindgen_object_drop_ref: (arg0) => {
-            console.log("__wbindgen_object_drop_ref called with:", arg0);
-          },
-        },
         env: {
           log_message: (ptr, len) => {
-            console.log("log_message called with ptr:", ptr, "len:", len);
+            console.log("Rust log_message called with ptr:", ptr, "len:", len);
             const memory = new Uint8Array(instance.exports.memory.buffer);
             const slice = memory.subarray(ptr, ptr + len);
             console.log("Rust log:", new TextDecoder().decode(slice));
@@ -543,17 +477,11 @@ async function executeWasmFile(filePath) {
 
           const amount = "100.00";
           const account = "account123";
-          const { ptr: amountPtr, len: amountLen } =
-            writeStringToMemoryRust(amount);
-          const { ptr: accountPtr, len: accountLen } =
-            writeStringToMemoryRust(account);
+          const { ptr: amountPtr, len: amountLen } = writeStringToMemoryRust(amount);
+          const { ptr: accountPtr, len: accountLen } = writeStringToMemoryRust(account);
 
-          const queryPtr = instance.exports.execute_credit_leg(
-            amountPtr,
-            amountLen,
-            accountPtr,
-            accountLen
-          );
+          console.log("Calling run_test function");
+          const queryPtr = instance.exports.run_test(amountPtr, amountLen, accountPtr, accountLen);
           const query = readStringFromMemoryRust(queryPtr);
           console.log("Credit leg query:", query);
 
@@ -566,39 +494,19 @@ async function executeWasmFile(filePath) {
             rdfQueryResult = { error: error.message };
           }
 
-          const { ptr: resultPtr, len: resultLen } = writeStringToMemoryRust(
-            JSON.stringify(rdfQueryResult)
-          );
-          const processedResultPtr = instance.exports.process_credit_result(
-            resultPtr,
-            resultLen,
-            amountPtr,
-            amountLen
-          );
+          const { ptr: resultPtr, len: resultLen } = writeStringToMemoryRust(JSON.stringify(rdfQueryResult));
+          console.log("Calling set_query_result function");
+          const processedResultPtr = instance.exports.set_query_result(resultPtr, resultLen, amountPtr, amountLen);
           const processedResult = readStringFromMemoryRust(processedResultPtr);
           console.log("Processed credit result:", processedResult);
 
-          const debitAmount = "50.00";
-          const { ptr: debitAmountPtr, len: debitAmountLen } =
-            writeStringToMemoryRust(debitAmount);
-          const debitResultPtr = instance.exports.execute_debit_leg(
-            debitAmountPtr,
-            debitAmountLen,
-            accountPtr,
-            accountLen
-          );
-          const debitResult = readStringFromMemoryRust(debitResultPtr);
-          console.log("Debit leg result:", debitResult);
-
-          instance.exports.dealloc(amountPtr, amountLen + 1);
-          instance.exports.dealloc(accountPtr, accountLen + 1);
-          instance.exports.dealloc(resultPtr, resultLen + 1);
-          instance.exports.dealloc(debitAmountPtr, debitAmountLen + 1);
+          instance.exports.custom_dealloc_str(amountPtr);
+          instance.exports.custom_dealloc_str(accountPtr);
+          instance.exports.custom_dealloc_str(resultPtr);
 
           return {
             creditQuery: query,
             creditResult: processedResult,
-            debitResult: debitResult,
           };
         };
 
