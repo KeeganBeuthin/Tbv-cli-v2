@@ -597,7 +597,7 @@ async function executeWasmFile(filePath) {
       console.log("RDF query completed successfully");
     }
 
-    return { success: true, creditResult };
+    return { success: true, creditResult, result: testResult };
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
