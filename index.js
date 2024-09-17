@@ -8,6 +8,7 @@ const { executeRdfQuery } = require('./rdfHandler');
 const { startServer } = require('./httpApi');
 const { startRustServer } = require('./rustHttpApi');
 const { startAssemblyScriptServer } = require('./ascHttpApi');
+const { createServer } = require('./simpleApi');
 
 const program = new Command();
 
@@ -39,6 +40,8 @@ program
     }
 
     console.log(`Executing WASM file: ${filePath}`);
+    await stopCurrentServer();
+    currentServer = await createServer();
     const executionResult = await executeWasmFile(filePath);
     if (executionResult.success) {
       console.log(`Testing WASM file: ${filePath}`);
@@ -46,6 +49,7 @@ program
     } else {
       console.error("Failed to execute WASM file.");
     }
+    await stopCurrentServer();
   });
 
 program
@@ -60,6 +64,17 @@ program
     }
   });
 
+let currentServer = null;
+
+async function stopCurrentServer() {
+  if (currentServer) {
+    console.log('Stopping current server...');
+    await new Promise((resolve) => currentServer.close(resolve));
+    currentServer = null;
+    console.log('Current server stopped');
+  }
+}
+
 program
   .command("serve <wasmFile>")
   .description("Start an HTTP server using the specified WebAssembly file")
@@ -71,14 +86,16 @@ program
       process.exit(1);
     }
 
+    await stopCurrentServer();
+
     try {
-      const server = await startServer(filePath, options.port);
-      process.on('SIGINT', () => {
+      currentServer = await startServer(filePath, options.port);
+      console.log(`Server started on port ${options.port}`);
+      process.on('SIGINT', async () => {
         console.log('Shutting down server...');
-        server.close(() => {
-          console.log('Server shut down successfully');
-          process.exit(0);
-        });
+        await stopCurrentServer();
+        console.log('Server shut down successfully');
+        process.exit(0);
       });
     } catch (error) {
       console.error("Failed to start server:", error);
@@ -86,7 +103,7 @@ program
     }
   });
 
-  program
+program
   .command("serve-rust <wasmFile>")
   .description("Start an HTTP server using the specified Rust WebAssembly file")
   .option("-p, --port <number>", "Port to run the server on", 3000)
@@ -97,14 +114,16 @@ program
       process.exit(1);
     }
 
+    await stopCurrentServer();
+
     try {
-      const server = await startRustServer(filePath, options.port);
-      process.on('SIGINT', () => {
+      currentServer = await startRustServer(filePath, options.port);
+      console.log(`Rust server started on port ${options.port}`);
+      process.on('SIGINT', async () => {
         console.log('Shutting down Rust server...');
-        server.close(() => {
-          console.log('Rust server shut down successfully');
-          process.exit(0);
-        });
+        await stopCurrentServer();
+        console.log('Rust server shut down successfully');
+        process.exit(0);
       });
     } catch (error) {
       console.error("Failed to start Rust server:", error);
@@ -112,7 +131,7 @@ program
     }
   });
 
-  program
+program
   .command("serve-asc <wasmFile>")
   .description("Start an HTTP server using the specified AssemblyScript WebAssembly file")
   .option("-p, --port <number>", "Port to run the server on", 3000)
@@ -123,21 +142,22 @@ program
       process.exit(1);
     }
 
+    await stopCurrentServer();
+
     try {
-      const server = await startAssemblyScriptServer(filePath, options.port);
-      process.on('SIGINT', () => {
+      currentServer = await startAssemblyScriptServer(filePath, options.port);
+      console.log(`AssemblyScript server started on port ${options.port}`);
+      process.on('SIGINT', async () => {
         console.log('Shutting down AssemblyScript server...');
-        server.close(() => {
-          console.log('AssemblyScript server shut down successfully');
-          process.exit(0);
-        });
+        await stopCurrentServer();
+        console.log('AssemblyScript server shut down successfully');
+        process.exit(0);
       });
     } catch (error) {
       console.error("Failed to start AssemblyScript server:", error);
       process.exit(1);
     }
   });
-
 
 program.parse(process.argv);
 

@@ -7,7 +7,6 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { exec } = require("child_process");
 const readFile = util.promisify(fs.readFile);
-const { server, closeServer, setHtmlCode } = require("./simpleApi");
 const crypto = require("crypto");
 if (typeof globalThis.crypto !== "object") {
   globalThis.crypto = {
@@ -18,7 +17,6 @@ if (typeof globalThis.crypto !== "object") {
 }
 const execPromise = util.promisify(exec);
 
-let apiServer = null;
 let wasmInstance = null;
 
 require("./wasm_exec.js");
@@ -166,34 +164,9 @@ async function executeRdfQuery(query) {
   }
 }
 
-async function startApiServer(htmlCode) {
-  return new Promise((resolve) => {
-    if (server.listening) {
-      console.log("Server is already running");
-      setHtmlCode(htmlCode);
-      resolve({
-        server: server,
-        port: 3000,
-        close: closeServer,
-      });
-    } else {
-      server.listen(3000, "127.0.0.1", () => {
-        console.log("API server is running on http://127.0.0.1:3000");
-        setHtmlCode(htmlCode);
-        resolve({
-          server: server,
-          port: 3000,
-          close: closeServer,
-        });
-      });
-    }
-  });
-}
-
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function executeWasmFile(filePath) {
-  let apiServerInstance;
   let rdfQueryComplete = false;
   const rdfQueryPromise = new Promise((resolve) => {
     global.resolveRdfQuery = () => {
@@ -716,12 +689,7 @@ async function executeWasmFile(filePath) {
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
-  } finally {
-    if (apiServerInstance) {
-      console.log("Closing API server");
-      apiServerInstance.closeServer();
-    }
   }
 }
 
-module.exports = { executeWasmFile, startApiServer };
+module.exports = { executeWasmFile };

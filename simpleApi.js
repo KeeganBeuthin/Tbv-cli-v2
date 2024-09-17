@@ -70,24 +70,22 @@ function setHtmlCode(code) {
   htmlCode = code;
 }
 
-// const server = app.listen(3000, "127.0.0.1", () => {
-//   console.log("Mock API server is running on http://127.0.0.1:3000");
-// });
+function createServer(port = 3000) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, "127.0.0.1", () => {
+      console.log(`Mock API server is running on http://127.0.0.1:${port}`);
+      resolve(server);
+    });
 
-// server.on("error", (error) => {
-//   console.error("Error in mock API server:", error);
-// });
+    server.on("error", (error) => {
+      console.error("Error in mock API server:", error);
+      reject(error);
+    });
 
-// server.on("close", () => {
-//   console.log("Mock API server is shutting down");
-// });
+    server.on("close", () => {
+      console.log("Mock API server is shutting down");
+    });
+  });
+}
 
-
-// function closeServer() {
-//   console.log("closeServer function called");
-//   server.close(() => {
-//     console.log("Server closed through closeServer function");
-//   });
-// }
-
-// module.exports = { server, closeServer, setHtmlCode };
+module.exports = { createServer, setHtmlCode };
