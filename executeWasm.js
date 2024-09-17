@@ -416,6 +416,7 @@ async function executeWasmFile(filePath) {
           if (typeof instance.exports.runTest !== "function") {
             throw new Error("runTest function not found in exports");
           }
+          console.log("Executing AssemblyScript runTest function");
           instance.exports.runTest();
         };
 
@@ -438,11 +439,14 @@ async function executeWasmFile(filePath) {
           );
         };
 
-        console.log("Executing main function");
+        console.log("Executing AssemblyScript main function");
         instance.exports.main();
 
-        console.log("Executing runTest function");
+        console.log("Executing AssemblyScript runTest function");
         global.runTest();
+
+        // Wait for asynchronous operations to complete
+        await new Promise((resolve) => setTimeout(resolve, 5000));
 
         return {
           success: true,
