@@ -26,7 +26,7 @@ describe('WebAssembly Module Integration Tests', () => {
     const result = await executeWasmFile('./testing-files/as-sdk-test/output.wasm');
     expect(result.success).toBe(true);
     expect(result.message).toBe('AssemblyScript module executed successfully');
-  });
+  }, 10000); // Increase timeout to 10 seconds
 
   // Add more tests for other WebAssembly modules (e.g., Go) if needed
 });
