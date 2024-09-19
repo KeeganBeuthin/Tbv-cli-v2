@@ -161,6 +161,16 @@ async function executeRdfQuery(query) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function executeWasmFile(filePath) {
+
+
+  let creditResult;
+
+
+  global.setFinalResult = (result) => {
+    console.log("Final result:", result);
+    creditResult = result.creditResult;
+  };
+
   let rdfQueryComplete = false;
   const rdfQueryPromise = new Promise((resolve) => {
     global.resolveRdfQuery = () => {
@@ -597,7 +607,11 @@ async function executeWasmFile(filePath) {
       console.log("RDF query completed successfully");
     }
 
+  if (creditResult) {
     return { success: true, creditResult, result: testResult };
+  } else {
+    return { success: false, error: "Credit result not set" };
+  }
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };
