@@ -1,5 +1,6 @@
 import { execute_credit_leg, process_credit_result, execute_debit_leg, allocateString, writeString, readString, handle_http_request, allocateJson, readJson, consoleLog, dumpMemory } from 'tbv-asc-sdk/assembly';
 import { JSON } from "assemblyscript-json/assembly";
+export { allocateString };
 
 declare function executeRdfQuery(queryPtr: usize, queryLen: i32): void;
 declare function setFinalResult(resultPtr: usize, resultLen: i32): void;
