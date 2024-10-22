@@ -23,7 +23,6 @@ require("./wasm_exec.js");
 /** @type {typeof import('./wasm_exec').Go} */
 const Go = globalThis.Go;
 
-
 console.log("wasm_exec.js loaded successfully");
 console.log(Go);
 if (typeof Go !== "function") {
@@ -31,6 +30,10 @@ if (typeof Go !== "function") {
     "Go class is not defined. Make sure wasm_exec.js is loaded correctly."
   );
 }
+
+const { executeGoWasm } = require("./executeGoWasm");
+const { executeRustWasm } = require("./executeRustWasm");
+const { executeAssemblyScriptWasm } = require("./executeAssemblyScriptWasm");
 
 async function isGoWasm(wasmBuffer) {
   try {
@@ -59,7 +62,6 @@ async function isGoWasm(wasmBuffer) {
     return false;
   }
 }
-
 
 async function isRustWasm(wasmBuffer) {
   try {
@@ -160,12 +162,40 @@ async function executeRdfQuery(query) {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Global function definitions
+global.setFinalResult = (result) => {
+  console.log("Final result:", result);
+  // You can do something with the final result here
+};
+
+global.setQueryResult = (result) => {
+  console.log("JavaScript: setQueryResult called");
+  if (typeof instance.exports.setQueryResult !== "function") {
+    throw new Error("setQueryResult function not found in exports");
+  }
+  const { ptr, len } = writeStringToMemory(result);
+  console.log(
+    `JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`
+  );
+  instance.exports.setQueryResult(ptr, len);
+  console.log("JavaScript: WASM setQueryResult finished");
+};
+
+
+global.executeRdfQuery = async (query) => {
+  try {
+    const result = await executeRdfQuery(query);
+    global.setQueryResult(JSON.stringify(result));
+  } catch (error) {
+    console.error("Error executing RDF query:", error);
+    global.setQueryResult(JSON.stringify({ error: error.message }));
+  }
+};
+
 async function executeWasmFile(filePath) {
-
-
   let creditResult;
-
-
+  let instance;
+  
   global.setFinalResult = (result) => {
     console.log("Final result:", result);
     creditResult = result.creditResult;
@@ -178,21 +208,6 @@ async function executeWasmFile(filePath) {
       resolve();
     };
   });
-
-  global.executeRdfQuery = async (query) => {
-    try {
-      const result = await executeRdfQuery(query);
-      global.setQueryResult(JSON.stringify(result));
-    } catch (error) {
-      console.error("Error executing RDF query:", error);
-      global.setQueryResult(JSON.stringify({ error: error.message }));
-    }
-  };
-
-  global.setFinalResult = (result) => {
-    console.log("Final result:", result);
-    // You can do something with the final result here
-  };
 
   try {
     const wasmBuffer = await promisify(fs.readFile)(filePath);
@@ -209,391 +224,19 @@ async function executeWasmFile(filePath) {
     const isAssemblyScriptModule = await isAssemblyScriptWasm(wasmBuffer);
     const isGoModule = await isGoWasm(wasmBuffer);
 
-    let instance;
+    let result;
+
     if (isGoModule) {
       console.log("Detected Go-compiled WebAssembly module");
-      const go = new Go();
-
-      
-      let memory = new WebAssembly.Memory({ initial: 256, maximum: 256 });
-      let heap = new Uint8Array(memory.buffer);
-      let heapNext = 1;
-
-      function malloc(size) {
-        const addr = heapNext;
-        heapNext += size;
-        if (heapNext > heap.length) {
-          console.error("Out of memory");
-          return 0;
-        }
-        return addr;
-      }
-
-      const importObject = {
-        ...go.importObject,
-        env: {
-          ...go.importObject.env,
-          // Add missing functions
-          malloc: (size) => {
-            console.log("malloc called with size:", size);
-            return malloc(size);
-          },
-          free: (ptr) => {
-            console.log("free called with ptr:", ptr);
-            // In this simple implementation, we don't actually free memory
-          },
-          query_rdf_tbv_cli: (queryPtr, queryLen) => {
-            const query = go.mem.loadString(queryPtr, queryLen);
-            console.log("Executing RDF query via TBV-CLI:", query);
-
-            executeRdfQuery(query)
-              .then((result) => {
-                console.log("RDF query result:", result);
-                const resultJson = JSON.stringify(result);
-                const resultPtr = go.mem.stringToPtr(resultJson);
-                go._resolveCallbackPromise(resultPtr);
-              })
-              .catch((error) => {
-                console.error("Error executing RDF query:", error);
-                const errorJson = JSON.stringify({ error: error.message });
-                const errorPtr = go.mem.stringToPtr(errorJson);
-                go._resolveCallbackPromise(errorPtr);
-              });
-
-            return 0;
-          },
-          "syscall/js.valueGet": () => {},
-          "syscall/js.valueSet": () => {},
-          "syscall/js.valueIndex": () => {},
-          "syscall/js.valueSetIndex": () => {},
-          "syscall/js.valueCall": () => {},
-          "syscall/js.valueNew": () => {},
-          "syscall/js.valueLength": () => {},
-          "syscall/js.valuePrepareString": () => {},
-          "syscall/js.valueLoadString": () => {},
-          "syscall/js.stringVal": () => {},
-          "syscall/js.valueInstanceOf": () => {},
-          "syscall/js.copyBytesToGo": () => {},
-          "syscall/js.copyBytesToJS": () => {},
-        },
-      };
-
-      console.log("Instantiating Go WebAssembly module...");
-      console.log("Import object keys:", Object.keys(importObject));
-      console.log("Env keys:", Object.keys(importObject.env));
-
-      const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-      const instance = result.instance;
-      
-      console.log("Go WebAssembly module instantiated successfully");
-      console.log("Available exports:", Object.keys(result.instance.exports));
-
-      console.log("Running Go program...");
-      go.run(instance);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      if (typeof global.runTest === "function") {
-        console.log("Executing runTest function...");
-        try {
-          const testResult = global.runTest();
-          console.log("runTest raw result:", testResult);
-          if (testResult) {
-            try {
-              const parsedResult = JSON.parse(testResult);
-              console.log("runTest parsed result:", parsedResult);
-            } catch (parseError) {
-              console.error("Error parsing runTest result:", parseError);
-              console.log("Unparsed result:", testResult);
-            }
-          } else {
-            console.log("runTest returned null or undefined");
-          }
-        } catch (error) {
-          console.error("Error executing runTest function:", error);
-        }
-      } else {
-        console.log("runTest function not found in global scope");
-      }
-
-      try {
-        await Promise.race([
-          runPromise,
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Go program execution timed out")),
-              10000
-            )
-          ),
-        ]);
-      } catch (error) {
-        console.error("Error or timeout while running Go program:", error);
-      }
-
-      console.log("Go program execution completed or timed out");
-
-      
+      result = await executeGoWasm(wasmBuffer, Go, global);
     } else if (isAssemblyScriptModule) {
       console.log("Detected AssemblyScript-compiled WebAssembly module");
-
-      let instance;
-      let memoryBase = 0;
-      const memory = new WebAssembly.Memory({ initial: 256, maximum: 512 });
-
-      function readStringFromMemory(ptr, len, quiet = false) {
-        const view = new Uint8Array(memory.buffer, ptr, len);
-        const str = new TextDecoder().decode(view);
-        if (!quiet) {
-          console.log(`Read string from memory: "${str}" (length: ${len})`);
-        }
-        return str;
-      }
-
-      function writeStringToMemory(str) {
-        console.log(
-          `Writing string to memory: "${str}" (length: ${str.length})`
-        );
-        const encoder = new TextEncoder();
-        const encodedStr = encoder.encode(str);
-        const ptr = memoryBase;
-        memoryBase += encodedStr.length + 1;
-
-        if (memoryBase > memory.buffer.byteLength) {
-          const pages = Math.ceil(
-            (memoryBase - memory.buffer.byteLength) / 65536
-          );
-          memory.grow(pages);
-        }
-
-        new Uint8Array(memory.buffer).set(encodedStr, ptr);
-        new Uint8Array(memory.buffer)[ptr + encodedStr.length] = 0;
-        console.log(`String written to memory at address: ${ptr}`);
-        return { ptr, len: encodedStr.length };
-      }
-
-      const importObject = {
-        env: {
-          abort: (message, fileName, lineNumber, columnNumber) => {
-            console.error(
-              `Abort called at ${fileName}:${lineNumber}:${columnNumber}: ${message}`
-            );
-          },
-          logMessage: (ptr, len) => {
-            const message = readStringFromMemory(ptr, len, true);
-            console.log("WASM:", message);
-          },
-          "console.log": (ptr) => {
-            let len = 0;
-            const view = new Uint8Array(memory.buffer, ptr);
-            while (view[len] !== 0) len++;
-            const str = readStringFromMemory(ptr, len, true);
-            console.log("WASM console.log:", str);
-          },
-
-          memory: memory,
-        },
-        index: {
-          executeRdfQuery: (queryPtr, queryLen) => {
-            const query = readStringFromMemory(queryPtr, queryLen);
-            console.log("Executing RDF query:", query);
-            global.executeRdfQuery(query);
-          },
-          setFinalResult: (resultPtr, resultLen) => {
-            const result = readStringFromMemory(resultPtr, resultLen);
-            console.log("Final result:", result);
-            global.setFinalResult(result);
-          },
-        },
-      };
-
-      console.log("Instantiating AssemblyScript WebAssembly module...");
-      try {
-        const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-        instance = result.instance;
-        console.log("Available exports:", Object.keys(instance.exports));
-
-        if (typeof instance.exports.main !== "function") {
-          throw new Error("main function not found in exports");
-        }
-
-        global.runTest = () => {
-          if (typeof instance.exports.runTest !== "function") {
-            throw new Error("runTest function not found in exports");
-          }
-          console.log("Executing AssemblyScript runTest function");
-          instance.exports.runTest();
-        };
-
-        global.setQueryResult = (result) => {
-          console.log("JavaScript: setQueryResult called");
-          if (typeof instance.exports.setQueryResult !== "function") {
-            throw new Error("setQueryResult function not found in exports");
-          }
-          const { ptr, len } = writeStringToMemory(result);
-          console.log(
-            `JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`
-          );
-          instance.exports.setQueryResult(ptr, len);
-          console.log("JavaScript: WASM setQueryResult finished");
-        };
-
-        global.setFinalResult = (result) => {
-          console.log(
-            `JavaScript: setFinalResult called with result: ${result}`
-          );
-        };
-
-        console.log("Executing AssemblyScript main function");
-        instance.exports.main();
-
-        console.log("Executing AssemblyScript runTest function");
-        global.runTest();
-
-        // Wait for asynchronous operations to complete
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-
-        return {
-          success: true,
-          message: "AssemblyScript module executed successfully",
-        };
-      } catch (error) {
-        console.error(
-          "Error instantiating or executing AssemblyScript module:",
-          error
-        );
-        return { success: false, error: error.message };
-      }
+      result = await executeAssemblyScriptWasm(wasmBuffer, global);
     } else if (isRustModule) {
       console.log("Detected Rust-compiled WebAssembly module");
-
-      const importObject = {
-        env: {
-          log_message: (ptr, len) => {
-            console.log("Rust log_message called with ptr:", ptr, "len:", len);
-            const memory = new Uint8Array(instance.exports.memory.buffer);
-            const slice = memory.subarray(ptr, ptr + len);
-            console.log("Rust log:", new TextDecoder().decode(slice));
-          },
-        },
-      };
-      console.log("Instantiating Rust WebAssembly module...");
-      try {
-        const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-        instance = result.instance;
-        console.log("Available Rust exports:", Object.keys(instance.exports));
-
-        global.runTest = async () => {
-          console.log("Running Rust SDK test");
-
-          const amount = "100.00";
-          const account = "account123";
-          const { ptr: amountPtr, len: amountLen } = writeStringToMemoryRust(amount);
-          const { ptr: accountPtr, len: accountLen } = writeStringToMemoryRust(account);
-
-          console.log("Calling run_test function");
-          const queryPtr = instance.exports.run_test(amountPtr, amountLen, accountPtr, accountLen);
-          const query = readStringFromMemoryRust(queryPtr);
-          console.log("Credit leg query:", query);
-
-          let rdfQueryResult;
-          try {
-            rdfQueryResult = await executeRdfQuery(query);
-            console.log("RDF query result:", rdfQueryResult);
-          } catch (error) {
-            console.error("Error executing RDF query:", error);
-            rdfQueryResult = { error: error.message };
-          }
-
-          const { ptr: resultPtr, len: resultLen } = writeStringToMemoryRust(JSON.stringify(rdfQueryResult));
-          console.log("Calling set_query_result function");
-          const processedResultPtr = instance.exports.set_query_result(resultPtr, resultLen, amountPtr, amountLen);
-          const processedResult = readStringFromMemoryRust(processedResultPtr);
-          console.log("Processed credit result:", processedResult);
-
-          instance.exports.custom_dealloc_str(amountPtr);
-          instance.exports.custom_dealloc_str(accountPtr);
-          instance.exports.custom_dealloc_str(resultPtr);
-
-          return {
-            creditQuery: query,
-            creditResult: processedResult,
-          };
-        };
-
-        console.log("Executing Rust runTest function");
-        try {
-          const testResult = await global.runTest();
-          console.log("Rust test results:", testResult);
-          return {
-            success: true,
-            message: "Rust module executed successfully",
-            result: testResult,
-          };
-        } catch (error) {
-          console.error("Error executing Rust runTest function:", error);
-          return { success: false, error: error.message };
-        }
-      } catch (error) {
-        console.error("Error instantiating or executing Rust module:", error);
-        return { success: false, error: error.message };
-      }
-    }
-
-    function readStringFromMemory(instance, ptr, maxLen) {
-      console.log(
-        `JS: Reading string from memory at ${ptr} with max length ${maxLen}`
-      );
-      if (ptr === 0) {
-        console.log("JS: Received null pointer");
-        return "";
-      }
-      const memory = new Uint8Array(instance.exports.memory.buffer);
-      let end = ptr;
-      while (end < ptr + maxLen && memory[end] !== 0) {
-        end++;
-      }
-      const str = new TextDecoder().decode(memory.subarray(ptr, end));
-      console.log(`JS: Read string: "${str}"`);
-      return str;
-    }
-
-    function writeStringToMemoryTinyGo(str) {
-      console.log(`JS: Writing string "${str}" to memory (TinyGo)`);
-      const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str + "\0");
-      const ptr = instance.exports.malloc(encodedStr.length);
-      const memory = new Uint8Array(instance.exports.memory.buffer);
-      memory.set(encodedStr, ptr);
-      console.log(
-        `JS: Allocated string at ${ptr} with length ${encodedStr.length}`
-      );
-      return { ptr, length: encodedStr.length - 1 }; // Subtract 1 to exclude null terminator
-    }
-
-    function writeStringToMemory(instance, str) {
-      console.log(`JS: Writing string "${str}" to memory`);
-      const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str);
-      const ptr = instance.exports.allocateString(encodedStr.length);
-      new Uint8Array(instance.exports.memory.buffer).set(encodedStr, ptr);
-      console.log(`JS: Allocated string at ${ptr}`);
-      return ptr;
-    }
-
-    function readStringFromMemoryRust(ptr) {
-      const memory = new Uint8Array(instance.exports.memory.buffer);
-      let len = 0;
-      while (memory[ptr + len] !== 0) len++;
-      return new TextDecoder().decode(memory.subarray(ptr, ptr + len));
-    }
-
-    function writeStringToMemoryRust(str) {
-      const encoder = new TextEncoder();
-      const encodedStr = encoder.encode(str + "\0");
-      const ptr = instance.exports.alloc(encodedStr.length);
-      const memory = new Uint8Array(instance.exports.memory.buffer);
-      memory.set(encodedStr, ptr);
-      return { ptr, len: encodedStr.length - 1 };
+      result = await executeRustWasm(wasmBuffer, global);
+    } else {
+      throw new Error("Unknown WebAssembly module type");
     }
 
     await Promise.race([
@@ -607,11 +250,11 @@ async function executeWasmFile(filePath) {
       console.log("RDF query completed successfully");
     }
 
-  if (creditResult) {
-    return { success: true, creditResult, result: testResult };
-  } else {
-    return { success: false, error: "Credit result not set" };
-  }
+    if (creditResult) {
+      return { success: true, creditResult, result };
+    } else {
+      return { success: false, error: "Credit result not set" };
+    }
   } catch (error) {
     console.error("Error executing WASM file:", error);
     return { success: false, error: error.message };

@@ -6,5 +6,8 @@
       "initialMemory": 2,
       "maximumMemory": 8,
       "runtime": "minimal"
+    },
+    "paths": {
+      "assemblyscript-json": ["./node_modules/assemblyscript-json/assembly/index.ts"]
     }
   }
