@@ -1,7 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
-const { initWasmForHttp } = require("./httpWasm");
+const { initWasmForHttp } = require("./goHttpWasm");
 
 const app = express();
 let wasmHandler = null;
@@ -54,7 +54,7 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
-function startServer(wasmPath, port = 3000) {
+function startGoServer(wasmPath, port = 3000) {
   return new Promise(async (resolve, reject) => {
     try {
       await initializeWasm(wasmPath);
@@ -77,4 +77,4 @@ function startServer(wasmPath, port = 3000) {
   });
 }
 
-module.exports = { startServer };
+module.exports = { startGoServer };

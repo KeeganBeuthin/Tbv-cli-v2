@@ -1,6 +1,6 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { executeRdfQuery } = require('./rdfHandler');
+const { executeRdfQuery } = require('../rdfHandler');
 
 
 

@@ -2,7 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs").promises;
 const path = require("path");
-const { handleWasmRequest } = require("./executeWasm");
+const { handleWasmRequest } = require("./execution-files/executeWasm");
 
 const app = express();
 

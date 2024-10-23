@@ -3,11 +3,11 @@ const { Command } = require("commander");
 const path = require("path");
 const fs = require("fs");
 const { generateDockerfile } = require("./conversion_dockerfile");
-const { executeWasmFile } = require("./executeWasm");
+const { executeWasmFile } = require("./execution-files/executeWasm");
 const { executeRdfQuery } = require('./rdfHandler');
-const { startServer } = require('./httpApi');
-const { startRustServer } = require('./rustHttpApi');
-const { startAssemblyScriptServer } = require('./ascHttpApi');
+const { startGoServer } = require('./go-http/goHttpApi');
+const { startRustServer } = require('./rust-http/rustHttpApi');
+const { startAssemblyScriptServer } = require('./asc-http/ascHttpApi');
 const { createServer } = require('./simpleApi');
 
 const program = new Command();
@@ -89,7 +89,7 @@ program
     await stopCurrentServer();
 
     try {
-      currentServer = await startServer(filePath, options.port);
+      currentServer = await startGoServer(filePath, options.port);
       console.log(`Server started on port ${options.port}`);
       process.on('SIGINT', async () => {
         console.log('Shutting down server...');
