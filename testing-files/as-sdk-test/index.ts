@@ -26,45 +26,70 @@ export function runTest(): void {
 }
 
 export function setQueryResult(bufferPtr: usize, length: i32): void {
-  consoleLog(`setQueryResult called with bufferPtr: ${bufferPtr}, length: ${length}`);
+  consoleLog("setQueryResult function entered");
+  consoleLog(`bufferPtr: ${bufferPtr}, length: ${length}`);
+  
+  if (bufferPtr === 0) {
+    consoleLog("Error: Received null pointer");
+    return;
+  }
+  
   consoleLog(`Memory size: ${memory.size()}`);
   
-  dumpMemory(bufferPtr, length);
-
   consoleLog(`Attempting to read string of length ${length} from address ${bufferPtr}`);
   const result = readString(bufferPtr);
   consoleLog(`Read result: "${result}"`);
 
-  const jsonResult = JSON.parse(result) as JSON.Obj;
+  consoleLog("Attempting to parse JSON");
+  const jsonResult = JSON.parse(result);
+  consoleLog("JSON parsed successfully");
 
-  const results = jsonResult.getArr("results");
-  if (results && results.valueOf().length > 0) {
-    const firstResult = results.valueOf()[0] as JSON.Obj;
-    const balanceValue = firstResult.get("balance");
-    if (balanceValue && balanceValue.isString) {
-      const balance = (balanceValue as JSON.Str).valueOf();
-      const parsedBalance = parseFloat(balance);
-      
-      if (!isNaN(parsedBalance)) {
-        const finalResult = new JSON.Obj();
-        finalResult.set("creditQuery", "PREFIX ex: <http://example.org/>\nSELECT ?balance\nWHERE {\n  ex:account123 ex:hasBalance ?balance .\n}");
-        finalResult.set("creditResult", `Current balance: ${balance}. After credit of 100.00, new balance: ${(parsedBalance + 100).toString()}`);
+  if (jsonResult && jsonResult.isObj) {
+    const jsonObj = jsonResult as JSON.Obj;
+    consoleLog("Checking for 'results' array");
+    const results = jsonObj.getArr("results");
+    if (results) {
+      consoleLog(`Results array found with length: ${results.valueOf().length}`);
+      if (results.valueOf().length > 0) {
+        consoleLog("Processing first result");
+        const firstResult = results.valueOf()[0] as JSON.Obj;
+        consoleLog("Checking for 'balance' value");
+        const balanceValue = firstResult.get("balance");
+        if (balanceValue && balanceValue.isString) {
+          const balance = (balanceValue as JSON.Str).valueOf();
+          consoleLog(`Balance found: ${balance}`);
+          const parsedBalance = parseFloat(balance);
+          
+          if (!isNaN(parsedBalance)) {
+            consoleLog("Creating final result object");
+            const finalResult = new JSON.Obj();
+            finalResult.set("creditQuery", "PREFIX ex: <http://example.org/>\nSELECT ?balance\nWHERE {\n  ex:account123 ex:hasBalance ?balance .\n}");
+            finalResult.set("creditResult", `Current balance: ${balance}. After credit of 100.00, new balance: ${(parsedBalance + 100).toString()}`);
 
-        const finalResultString = finalResult.toString();
-        consoleLog(`Final result: ${finalResultString}`); 
+            const finalResultString = finalResult.toString();
+            consoleLog(`Final result: ${finalResultString}`); 
 
-        const finalResultPtr = allocateJson(finalResult);
-        setFinalResult(finalResultPtr, finalResultString.length);
-        consoleLog("setFinalResult called");
+            consoleLog("Allocating final result JSON");
+            const finalResultPtr = allocateJson(finalResult);
+            consoleLog(`Calling setFinalResult with ptr: ${finalResultPtr}, length: ${finalResultString.length}`);
+            setFinalResult(finalResultPtr, finalResultString.length);
+            consoleLog("setFinalResult called");
+          } else {
+            consoleLog(`Error: Invalid balance value ${balance}`);
+          }
+        } else {
+          consoleLog("Balance not found in result or is not a string");
+        }
       } else {
-        consoleLog(`Error: Invalid balance value ${balance}`);
+        consoleLog("Results array is empty");
       }
     } else {
-      consoleLog("Balance not found in result or is not a string");
+      consoleLog("No 'results' array found in the JSON object");
     }
   } else {
-    consoleLog("No results found in the JSON object");
+    consoleLog("Invalid JSON object");
   }
+  consoleLog("setQueryResult function completed");
 }
 
 export function handleHttpRequest(requestPtr: usize): usize {

@@ -15,12 +15,14 @@ async function executeAssemblyScriptWasm(wasmBuffer, global) {
   }
 
   function writeStringToMemory(str) {
-    console.log(
-      `Writing string to memory: "${str}" (length: ${str.length})`
-    );
+    console.log(`Writing string to memory: "${str}" (length: ${str.length})`);
     const encoder = new TextEncoder();
     const encodedStr = encoder.encode(str);
-    const ptr = memoryBase;
+    let ptr = memoryBase;
+    if (ptr === 0) {
+      ptr = 1; // Ensure we're not using address 0
+      console.log("Warning: Memory base was 0, adjusted to 1");
+    }
     memoryBase += encodedStr.length + 1;
 
     if (memoryBase > memory.buffer.byteLength) {
@@ -44,15 +46,12 @@ async function executeAssemblyScriptWasm(wasmBuffer, global) {
         );
       },
       logMessage: (ptr, len) => {
-        const message = readStringFromMemory(ptr, len, true);
+        const message = readStringFromMemory(ptr, len);
         console.log("WASM:", message);
       },
       "console.log": (ptr) => {
-        let len = 0;
-        const view = new Uint8Array(memory.buffer, ptr);
-        while (view[len] !== 0) len++;
-        const str = readStringFromMemory(ptr, len, true);
-        console.log("WASM console.log:", str);
+        const message = readStringFromMemory(ptr, -1);
+        console.log("WASM console.log:", message);
       },
       memory: memory,
     },
@@ -90,15 +89,29 @@ async function executeAssemblyScriptWasm(wasmBuffer, global) {
 
     global.setQueryResult = (result) => {
       console.log("JavaScript: setQueryResult called");
-      if (typeof instance.exports.setQueryResult !== "function") {
-        throw new Error("setQueryResult function not found in exports");
-      }
+      console.log(`JavaScript: Result type: ${typeof result}`);
+      console.log(`JavaScript: Result: ${result}`);
       const { ptr, len } = writeStringToMemory(result);
-      console.log(
-        `JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`
-      );
-      instance.exports.setQueryResult(ptr, len);
-      console.log("JavaScript: WASM setQueryResult finished");
+      if (ptr === 0) {
+        console.error("Error: Received null pointer from writeStringToMemory");
+        return;
+      }
+      console.log(`JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`);
+      try {
+        instance.exports.setQueryResult(ptr, len);
+        console.log("JavaScript: WASM setQueryResult completed successfully");
+      } catch (error) {
+        console.error("JavaScript: Error in WASM setQueryResult:", error);
+        console.error("JavaScript: Error details:", error.stack);
+        // Try to read memory at the given pointer to see what's there
+        try {
+          const memoryView = new Uint8Array(instance.exports.memory.buffer);
+          const bytes = memoryView.slice(ptr, ptr + len);
+          console.log("JavaScript: Memory at ptr:", bytes);
+        } catch (memoryError) {
+          console.error("JavaScript: Error reading memory:", memoryError);
+        }
+      }
     };
 
     global.setFinalResult = (result) => {

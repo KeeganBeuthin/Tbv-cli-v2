@@ -168,27 +168,18 @@ global.setFinalResult = (result) => {
   // You can do something with the final result here
 };
 
-global.setQueryResult = (result) => {
-  console.log("JavaScript: setQueryResult called");
-  if (typeof instance.exports.setQueryResult !== "function") {
-    throw new Error("setQueryResult function not found in exports");
-  }
-  const { ptr, len } = writeStringToMemory(result);
-  console.log(
-    `JavaScript: Calling WASM setQueryResult with ptr: ${ptr}, len: ${len}`
-  );
-  instance.exports.setQueryResult(ptr, len);
-  console.log("JavaScript: WASM setQueryResult finished");
-};
-
 
 global.executeRdfQuery = async (query) => {
   try {
     const result = await executeRdfQuery(query);
-    global.setQueryResult(JSON.stringify(result));
+    const resultString = JSON.stringify(result);
+    const { ptr, len } = writeStringToMemory(resultString);
+    instance.exports.setQueryResult(ptr, len);
   } catch (error) {
     console.error("Error executing RDF query:", error);
-    global.setQueryResult(JSON.stringify({ error: error.message }));
+    const errorString = JSON.stringify({ error: error.message });
+    const { ptr, len } = writeStringToMemory(errorString);
+    instance.exports.setQueryResult(ptr, len);
   }
 };
 
