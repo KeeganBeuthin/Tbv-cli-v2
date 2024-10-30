@@ -2,7 +2,7 @@ const fs = require("fs").promises;
 const path = require("path");
 const { executeRdfQuery } = require('../rdfHandler');
 
-require("./wasm_exec.js");
+require("../execution-files/wasm_exec.js");
 const Go = globalThis.Go;
 
 function createImportObject(go) {
