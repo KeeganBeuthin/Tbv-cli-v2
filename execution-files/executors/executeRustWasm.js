@@ -7,35 +7,57 @@ const { executeRdfQuery } = require('../rdfQueryHandler');
  * @returns {Promise<Object>} Execution result
  */
 async function executeRustWasm(wasmBuffer) {
-  console.log("Executing Rust-compiled WebAssembly module");
+    console.log("Executing Rust-compiled WebAssembly module");
+    let rdfQueryComplete = false;
+    let instance = null;
 
-  try {
-    const importObject = {
-      env: {
-        log_message: (ptr, len) => {
-          console.log("Rust log_message called with ptr:", ptr, "len:", len);
-          const memory = new Uint8Array(instance.exports.memory.buffer);
-          const slice = memory.subarray(ptr, ptr + len);
-          console.log("Rust log:", new TextDecoder().decode(slice));
-        },
-      },
-    };
+    try {
+        const importObject = {
+            env: {
+                log_message: (ptr, len) => {
+                    console.log("Rust log_message called with ptr:", ptr, "len:", len);
+                    const memory = new Uint8Array(instance.exports.memory.buffer);
+                    const slice = memory.subarray(ptr, ptr + len);
+                    console.log("Rust log:", new TextDecoder().decode(slice));
+                },
+            },
+        };
 
-    console.log("Instantiating Rust WebAssembly module...");
-    const result = await WebAssembly.instantiate(wasmBuffer, importObject);
-    const instance = result.instance;
-    console.log("Available Rust exports:", Object.keys(instance.exports));
+        console.log("Instantiating Rust WebAssembly module...");
+        const result = await WebAssembly.instantiate(wasmBuffer, importObject);
+        instance = result.instance;
+        console.log("Available Rust exports:", Object.keys(instance.exports));
 
-    // Execute test
-    const testResult = await executeRustTest(instance);
-    return testResult;
-  } catch (error) {
-    console.error("Error executing Rust WASM:", error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
+        // Execute test
+        const testResult = await executeRustTest(instance);
+        
+        // Mark RDF query as complete if we got results
+        rdfQueryComplete = testResult && testResult.creditResult !== undefined;
+
+        return {
+            success: true,
+            ...testResult,
+            rdfQueryComplete,
+            completed: true
+        };
+    } catch (error) {
+        console.error("Error executing Rust WASM:", error);
+        return {
+            success: false,
+            error: error.message,
+            rdfQueryComplete,
+            completed: false
+        };
+    } finally {
+        // Cleanup Rust instance if necessary
+        if (instance && instance.exports.cleanup) {
+            try {
+                instance.exports.cleanup();
+            } catch (error) {
+                console.warn("Error during Rust cleanup:", error);
+            }
+        }
+    }
 }
 
 /**
@@ -44,64 +66,68 @@ async function executeRustWasm(wasmBuffer) {
  * @returns {Promise<Object>} Test execution result
  */
 async function executeRustTest(instance) {
-  try {
-    console.log("Running Rust SDK test");
-
-    // Set up test parameters
-    const amount = "100.00";
-    const account = "account123";
-    const { ptr: amountPtr, len: amountLen } = writeStringToMemoryRust(instance, amount);
-    const { ptr: accountPtr, len: accountLen } = writeStringToMemoryRust(instance, account);
-
-    // Execute test
-    console.log("Calling run_test function");
-    const queryPtr = instance.exports.run_test(amountPtr, amountLen, accountPtr, accountLen);
-    const query = readStringFromMemoryRust(instance, queryPtr);
-    console.log("Credit leg query:", query);
-
-    // Execute RDF query
-    let rdfQueryResult;
     try {
-      rdfQueryResult = await executeRdfQuery(query);
-      console.log("RDF query result:", rdfQueryResult);
+        console.log("Running Rust SDK test");
+
+        // Set up test parameters
+        const amount = "100.00";
+        const account = "account123";
+        const { ptr: amountPtr, len: amountLen } = writeStringToMemoryRust(instance, amount);
+        const { ptr: accountPtr, len: accountLen } = writeStringToMemoryRust(instance, account);
+
+        // Execute test
+        console.log("Calling run_test function");
+        const queryPtr = instance.exports.run_test(amountPtr, amountLen, accountPtr, accountLen);
+        const query = readStringFromMemoryRust(instance, queryPtr);
+        console.log("Credit leg query:", query);
+
+        // Execute RDF query
+        let rdfQueryResult;
+        try {
+            rdfQueryResult = await executeRdfQuery(query);
+            console.log("RDF query result:", rdfQueryResult);
+        } catch (error) {
+            console.error("Error executing RDF query:", error);
+            rdfQueryResult = { error: error.message };
+        }
+
+        // Process results
+        const { ptr: resultPtr, len: resultLen } = writeStringToMemoryRust(
+            instance,
+            JSON.stringify(rdfQueryResult)
+        );
+        
+        console.log("Calling set_query_result function");
+        const processedResultPtr = instance.exports.set_query_result(
+            resultPtr,
+            resultLen,
+            amountPtr,
+            amountLen
+        );
+        const processedResult = readStringFromMemoryRust(instance, processedResultPtr);
+        console.log("Processed credit result:", processedResult);
+
+        // Cleanup allocated memory
+        instance.exports.custom_dealloc_str(amountPtr);
+        instance.exports.custom_dealloc_str(accountPtr);
+        instance.exports.custom_dealloc_str(resultPtr);
+        instance.exports.custom_dealloc_str(queryPtr);
+        instance.exports.custom_dealloc_str(processedResultPtr);
+
+        return {
+            success: true,
+            creditQuery: query,
+            creditResult: processedResult,
+            rdfQueryComplete: true
+        };
     } catch (error) {
-      console.error("Error executing RDF query:", error);
-      rdfQueryResult = { error: error.message };
+        console.error("Error executing Rust test:", error);
+        return {
+            success: false,
+            error: error.message,
+            rdfQueryComplete: false
+        };
     }
-
-    // Process results
-    const { ptr: resultPtr, len: resultLen } = writeStringToMemoryRust(
-      instance,
-      JSON.stringify(rdfQueryResult)
-    );
-    
-    console.log("Calling set_query_result function");
-    const processedResultPtr = instance.exports.set_query_result(
-      resultPtr,
-      resultLen,
-      amountPtr,
-      amountLen
-    );
-    const processedResult = readStringFromMemoryRust(instance, processedResultPtr);
-    console.log("Processed credit result:", processedResult);
-
-    // Cleanup
-    instance.exports.custom_dealloc_str(amountPtr);
-    instance.exports.custom_dealloc_str(accountPtr);
-    instance.exports.custom_dealloc_str(resultPtr);
-
-    return {
-      success: true,
-      creditQuery: query,
-      creditResult: processedResult
-    };
-  } catch (error) {
-    console.error("Error executing Rust test:", error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
 }
 
 module.exports = { executeRustWasm };
