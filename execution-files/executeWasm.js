@@ -1,7 +1,9 @@
 const fs = require("fs");
 const { promisify } = require("util");
 const path = require("path");
+
 const { setupCryptoPolyfill } = require('./polyfillUtil.js');
+
 
 // Set up crypto polyfill first
 setupCryptoPolyfill();
@@ -128,9 +130,7 @@ async function executeWasmFile(filePath) {
                        moduleInfo.isRust ? 'Rust' : 
                        moduleInfo.isAssemblyScript ? 'AssemblyScript' : 'Unknown',
             executionResult: executionResult,
-            rdfQueryComplete: rdfQueryComplete,
-            creditResult: creditResult,
-            testResult: testResult
+            rdfQueryComplete: executionResult.rdfQueryComplete
         };
 
         // Clean up event listeners

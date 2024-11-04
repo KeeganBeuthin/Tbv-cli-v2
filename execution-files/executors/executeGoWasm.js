@@ -1,5 +1,7 @@
 const { setupCryptoPolyfill } = require('../polyfillUtil.js');
 const { HeapManager, createWasmMemory } = require('../memoryUtils.js');
+const { executeRdfQuery } = require('../rdfQueryHandler.js');
+
 // Set up crypto polyfill before loading Go runtime
 setupCryptoPolyfill();
 
@@ -21,8 +23,19 @@ async function executeGoWasm(wasmBuffer) {
     
     try {
         const go = new Go();
-        let memory = new WebAssembly.Memory({ initial: 256, maximum: 256 });
+        const memory = createWasmMemory(256, 256);
         const heapManager = new HeapManager(memory);
+        let executionComplete = false;
+        let executionResult = null;
+        let finalResult = null;
+        let checkInterval = null;
+
+        // Store the final result when it's set
+        global.setFinalResult = (result) => {
+            console.log("Setting final result:", result);
+            finalResult = result;
+            executionComplete = true;
+        };
 
         const importObject = {
             ...go.importObject,
@@ -36,25 +49,22 @@ async function executeGoWasm(wasmBuffer) {
                     console.log("free called with ptr:", ptr);
                     heapManager.free(ptr);
                 },
-                query_rdf_tbv_cli: (queryPtr, queryLen) => {
+                query_rdf_tbv_cli: async (queryPtr, queryLen) => {
                     const query = go.mem.loadString(queryPtr, queryLen);
                     console.log("Executing RDF query via TBV-CLI:", query);
 
-                    return new Promise((resolve, reject) => {
-                        executeRdfQuery(query)
-                            .then((result) => {
-                                console.log("RDF query result:", result);
-                                const resultJson = JSON.stringify(result);
-                                const resultPtr = go.mem.stringToPtr(resultJson);
-                                resolve(resultPtr);
-                            })
-                            .catch((error) => {
-                                console.error("Error executing RDF query:", error);
-                                const errorJson = JSON.stringify({ error: error.message });
-                                const errorPtr = go.mem.stringToPtr(errorJson);
-                                resolve(errorPtr);
-                            });
-                    });
+                    try {
+                        const result = await executeRdfQuery(query);
+                        console.log("RDF query result:", result);
+                        const resultJson = JSON.stringify(result);
+                        const resultPtr = go.mem.stringToPtr(resultJson);
+                        return resultPtr;
+                    } catch (error) {
+                        console.error("Error executing RDF query:", error);
+                        const errorJson = JSON.stringify({ error: error.message });
+                        const errorPtr = go.mem.stringToPtr(errorJson);
+                        return errorPtr;
+                    }
                 },
                 // Go syscall/js implementations
                 "syscall/js.valueGet": () => {},
@@ -85,7 +95,22 @@ async function executeGoWasm(wasmBuffer) {
                 throw new Error("runTest function not found in exports");
             }
             console.log("Executing Go runTest function");
-            return instance.exports.runTest();
+            const testResult = instance.exports.runTest();
+            if (testResult) {
+                try {
+                    executionResult = {
+                        success: true,
+                        result: testResult
+                    };
+                } catch (parseError) {
+                    executionResult = {
+                        success: false,
+                        error: "Failed to parse test result",
+                        rawResult: testResult
+                    };
+                }
+            }
+            return testResult;
         };
 
         // Run the Go program
@@ -99,51 +124,62 @@ async function executeGoWasm(wasmBuffer) {
         if (typeof global.runTest === "function") {
             console.log("Executing runTest function...");
             try {
-                const testResult = global.runTest();
-                console.log("runTest raw result:", testResult);
-                if (testResult) {
-                    try {
-                        const parsedResult = JSON.parse(testResult);
-                        console.log("runTest parsed result:", parsedResult);
-                        return {
-                            success: true,
-                            result: parsedResult
-                        };
-                    } catch (parseError) {
-                        console.error("Error parsing runTest result:", parseError);
-                        return {
-                            success: false,
-                            error: "Failed to parse test result",
-                            rawResult: testResult
-                        };
-                    }
-                }
+                global.runTest();
             } catch (error) {
                 console.error("Error executing runTest function:", error);
-                return {
+                executionResult = {
                     success: false,
                     error: error.message
                 };
             }
         }
 
-        // Wait for program completion or timeout
+        // Set up completion promise with interval checking
+        const completionPromise = new Promise((resolve) => {
+            checkInterval = setInterval(() => {
+                if (finalResult !== null || go.exited) {
+                    clearInterval(checkInterval);
+                    executionComplete = true;
+                    resolve();
+                }
+            }, 100);
+        });
+
+        // Clean up function
+        const cleanup = () => {
+            if (checkInterval) {
+                clearInterval(checkInterval);
+                checkInterval = null;
+            }
+        };
+
+        // Wait for completion or timeout
         try {
             await Promise.race([
-                runPromise,
+                completionPromise,
                 new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Go program execution timed out")), 10000)
+                    setTimeout(() => {
+                        if (!executionComplete) {
+                            reject(new Error("Go program execution timed out"));
+                        }
+                    }, 30000) // 30 second timeout
                 )
             ]);
+
+            cleanup();
             return {
                 success: true,
-                message: "Go program completed successfully"
+                result: finalResult,
+                rdfQueryComplete: true
             };
         } catch (error) {
+            cleanup();
             console.error("Error or timeout while running Go program:", error);
             return {
-                success: false,
-                error: error.message
+                success: finalResult !== null,
+                error: finalResult === null ? error.message : undefined,
+                result: finalResult,
+                rdfQueryComplete: finalResult !== null
             };
         }
     } catch (error) {
