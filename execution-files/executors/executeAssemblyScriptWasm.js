@@ -37,7 +37,7 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
                     try {
                         const query = readStringFromMemory(instance, queryPtr, queryLen);
                         console.log("Executing RDF query:", query);
-                        creditQuery = query; // Store the query
+                        creditQuery = query;
                         global.executeRdfQuery(query);
                     } catch (error) {
                         console.error("Error in executeRdfQuery:", error);
@@ -47,9 +47,11 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
                     try {
                         const result = readStringFromMemory(instance, resultPtr, resultLen);
                         console.log("Setting final result:", result);
-                        global.setFinalResult(result);
+                        queryResult = {
+                            creditQuery: creditQuery,
+                            creditResult: result
+                        };
                         rdfQueryComplete = true;
-                        queryResult = result;
                     } catch (error) {
                         console.error("Error in setFinalResult:", error);
                     }
@@ -65,52 +67,49 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
         // Set up global functions
         global.setQueryResult = (result) => {
             console.log("JavaScript: setQueryResult called with result:", result);
-            if (!result) {
-                console.error("Error: Null result received");
-                return;
-            }
-
             try {
                 const parsedResult = JSON.parse(result);
+                
                 if (!parsedResult.results || !parsedResult.results[0] || !parsedResult.results[0].balance) {
-                    throw new Error("Invalid result structure");
+                    console.error("Invalid result structure:", parsedResult);
+                    return;
                 }
 
                 const balance = parsedResult.results[0].balance;
-                const formattedResult = {
+                const formattedResult = `Current balance: ${balance}. After credit of 100.00, new balance: ${Number(balance) + 100}.00`;
+
+                // Store result in JavaScript
+                queryResult = {
                     creditQuery: creditQuery,
-                    creditResult: `Current balance: ${balance}. After credit of 100.00, new balance: ${Number(balance) + 100}.00`
+                    creditResult: formattedResult
                 };
 
-                console.log("Formatted result:", formattedResult);
-
-                // Convert the formatted result to a string
-                const resultString = JSON.stringify(formattedResult);
-                
-                // Allocate memory for the string using AssemblyScript's allocator
-                const stringPtr = instance.exports.allocateString(resultString.length);
-                if (!stringPtr) {
-                    throw new Error("Failed to allocate memory for result string");
-                }
-
-                // Write the string to memory
-                const dataView = new DataView(instance.exports.memory.buffer);
-                const encoder = new TextEncoder();
-                const bytes = encoder.encode(resultString);
-                
-                for (let i = 0; i < bytes.length; i++) {
-                    dataView.setUint8(stringPtr + i, bytes[i]);
-                }
-
-                console.log(`JavaScript: Calling WASM setQueryResult with ptr: ${stringPtr}, len: ${resultString.length}`);
-                instance.exports.setQueryResult(stringPtr, resultString.length);
-                console.log("JavaScript: WASM setQueryResult finished");
-                
+                console.log("Formatted result:", queryResult);
                 rdfQueryComplete = true;
-                queryResult = formattedResult;
+
+                // Pass plain string to WASM
+                if (instance.exports.setQueryResult) {
+                    // Create a JSON string that won't need to be parsed
+                    const wasmResult = JSON.stringify({ result: formattedResult });
+                    const ptr = instance.exports.allocateString(wasmResult.length);
+                    const dataView = new DataView(instance.exports.memory.buffer);
+                    const encoder = new TextEncoder();
+                    const bytes = encoder.encode(wasmResult);
+                    
+                    for (let i = 0; i < bytes.length; i++) {
+                        dataView.setUint8(ptr + i, bytes[i]);
+                    }
+
+                    instance.exports.setQueryResult(ptr, wasmResult.length);
+                }
+
             } catch (error) {
-                console.error("Error in setQueryResult:", error);
-                throw error;
+                console.error("Error processing query result:", error);
+                queryResult = {
+                    error: error.message,
+                    creditQuery: creditQuery
+                };
+                rdfQueryComplete = true;
             }
         };
 
@@ -124,15 +123,15 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
         console.log("Executing AssemblyScript runTest function");
         instance.exports.runTest();
 
-        // Wait for completion or timeout
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        // Wait for completion
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         return {
             success: true,
             message: "AssemblyScript module executed successfully",
             rdfQueryComplete: rdfQueryComplete,
             result: queryResult,
-            completed: true
+            completed: rdfQueryComplete
         };
 
     } catch (error) {
@@ -144,7 +143,6 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
             completed: false
         };
     } finally {
-        // Cleanup if necessary
         if (instance && instance.exports.__collect) {
             try {
                 instance.exports.__collect();
