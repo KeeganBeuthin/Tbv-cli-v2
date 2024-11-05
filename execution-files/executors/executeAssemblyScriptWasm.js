@@ -87,10 +87,14 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
                 console.log("Formatted result:", queryResult);
                 rdfQueryComplete = true;
 
-                // Pass plain string to WASM
+                // Pass result to WASM with the expected structure
                 if (instance.exports.setQueryResult) {
-                    // Create a JSON string that won't need to be parsed
-                    const wasmResult = JSON.stringify({ result: formattedResult });
+                    const wasmResult = JSON.stringify({
+                        results: [{
+                            balance: formattedResult
+                        }]
+                    });
+                    
                     const ptr = instance.exports.allocateString(wasmResult.length);
                     const dataView = new DataView(instance.exports.memory.buffer);
                     const encoder = new TextEncoder();
