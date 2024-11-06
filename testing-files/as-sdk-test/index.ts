@@ -62,18 +62,12 @@ export function setQueryResult(bufferPtr: usize, length: i32): void {
           
           if (!isNaN(parsedBalance)) {
             consoleLog("Creating final result object");
-            const finalResult = new JSON.Obj();
-            finalResult.set("creditQuery", "PREFIX ex: <http://example.org/>\nSELECT ?balance\nWHERE {\n  ex:account123 ex:hasBalance ?balance .\n}");
-            finalResult.set("creditResult", `Current balance: ${balance}. After credit of 100.00, new balance: ${(parsedBalance + 100).toString()}`);
-
-            const finalResultString = finalResult.toString();
-            consoleLog(`Final result: ${finalResultString}`); 
-
-            consoleLog("Allocating final result JSON");
-            const finalResultPtr = allocateJson(finalResult);
-            consoleLog(`Calling setFinalResult with ptr: ${finalResultPtr}, length: ${finalResultString.length}`);
-            setFinalResult(finalResultPtr, finalResultString.length);
-            consoleLog("setFinalResult called");
+            const creditQuery = "PREFIX ex: <http://example.org/>\nSELECT ?balance\nWHERE {\n  ex:account123 ex:hasBalance ?balance .\n}";
+            const creditResult = `Current balance: ${balance}. After credit of 100.00, new balance: ${(parsedBalance + 100).toString()}`;
+            
+            const finalResultPtr = allocateString(creditResult.length);
+            writeString(finalResultPtr, creditResult);
+            setFinalResult(finalResultPtr, creditResult.length);
           } else {
             consoleLog(`Error: Invalid balance value ${balance}`);
           }

@@ -91,7 +91,8 @@ async function executeAssemblyScriptWasm(wasmBuffer) {
                 if (instance.exports.setQueryResult) {
                     const wasmResult = JSON.stringify({
                         results: [{
-                            balance: formattedResult
+                            balance: balance,
+                            formatted: formattedResult
                         }]
                     });
                     
