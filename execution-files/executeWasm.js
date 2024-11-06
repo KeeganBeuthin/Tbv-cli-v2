@@ -112,7 +112,7 @@ async function executeWasmFile(filePath) {
         }
 
         // Wait for RDF query completion or timeout
-        const timeoutDuration = 3000; // 10 seconds
+        const timeoutDuration = 1000; // 10 seconds
         const rdfQueryResult = await Promise.race([
             rdfQueryPromise,
             new Promise((_, reject) => 
