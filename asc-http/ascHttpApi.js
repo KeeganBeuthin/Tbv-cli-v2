@@ -58,10 +58,29 @@ app.get("/health", (req, res) => {
 
 function startAssemblyScriptServer(wasmPath, port = 3000) {
   return new Promise(async (resolve, reject) => {
+    let server = null;
     try {
       await initializeWasm(wasmPath);
-      const server = app.listen(port, () => {
+      server = app.listen(port, () => {
         console.log(`AssemblyScript API server is running on http://localhost:${port}`);
+        
+        // Add SIGINT handler
+        process.on('SIGINT', async () => {
+          console.log('\nReceived SIGINT. Shutting down AssemblyScript server...');
+          if (server) {
+            server.close(() => {
+              console.log('AssemblyScript server closed successfully');
+              process.exit(0);
+            });
+            
+            // Force close after 3 seconds if graceful shutdown fails
+            setTimeout(() => {
+              console.log('Force closing AssemblyScript server...');
+              process.exit(1);
+            }, 2000);
+          }
+        });
+
         resolve(server);
       });
 
@@ -72,8 +91,15 @@ function startAssemblyScriptServer(wasmPath, port = 3000) {
 
       server.on("close", () => {
         console.log("AssemblyScript API server is shutting down");
+        // Clean up any remaining WASM resources
+        if (wasmHandler) {
+          wasmHandler = null;
+        }
       });
     } catch (error) {
+      if (server) {
+        server.close();
+      }
       reject(error);
     }
   });

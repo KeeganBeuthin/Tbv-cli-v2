@@ -77,21 +77,46 @@ async function initWasmForHttp(filePath) {
 
     const result = await WebAssembly.instantiate(wasmBuffer, importObject);
     console.log("WebAssembly module instantiated successfully for HTTP API");
-    console.log("Available exports:", Object.keys(result.instance.exports));
 
     go.run(result.instance);
-
-    if (typeof global.handleHttpRequest !== "function") {
-      throw new Error("handleHttpRequest function not found in WebAssembly module");
-    }
 
     return {
       success: true,
       handleHttpRequest: (requestData) => {
-        console.log("Calling handleHttpRequest with:", JSON.stringify(requestData, null, 2));
-        const responseJSON = global.handleHttpRequest(JSON.stringify(requestData));
+        // Stringify the body if it's an object
+        const modifiedRequest = {
+          ...requestData,
+          body: typeof requestData.body === 'object' ? 
+                JSON.stringify(requestData.body) : 
+                requestData.body
+        };
+
+        console.log("Calling handleHttpRequest with modified request:", 
+          JSON.stringify(modifiedRequest, null, 2));
+
+        const responseJSON = global.handleHttpRequest(JSON.stringify(modifiedRequest));
         console.log("Response from handleHttpRequest:", responseJSON);
-        return JSON.parse(responseJSON);
+        
+        try {
+          const parsedResponse = JSON.parse(responseJSON);
+          // Parse the body if it's a JSON string
+          if (typeof parsedResponse.body === 'string' && 
+              parsedResponse.body.trim().startsWith('{')) {
+            try {
+              parsedResponse.body = JSON.parse(parsedResponse.body);
+            } catch (e) {
+              console.log("Body is not valid JSON, keeping as string");
+            }
+          }
+          return parsedResponse;
+        } catch (error) {
+          console.error("Error parsing response:", error);
+          return {
+            statusCode: 500,
+            headers: { "Content-Type": "application/json" },
+            body: { error: "Internal Server Error", details: error.message }
+          };
+        }
       }
     };
   } catch (error) {

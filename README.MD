@@ -28,7 +28,7 @@ Start a local server for WebAssembly modules:
 ```bash
 tbv-cli serve-asc [file path]    # AssemblyScript server
 tbv-cli serve-rust [file path]   # Rust server
-tbv-cli serve [file path]        # Go server (Note: naming to be updated)
+tbv-cli serve-go [file path]     # Go server
 ```
 
 ## Pre-built Modules

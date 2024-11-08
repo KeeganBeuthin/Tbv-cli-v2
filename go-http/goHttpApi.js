@@ -38,15 +38,25 @@ app.all("/api/*", async (req, res) => {
     method: req.method,
     path: req.path,
     headers: req.headers,
-    body: req.body,
+    body: req.body
   };
 
   try {
     const response = wasmHandler(requestData);
-    res.status(response.statusCode).set(response.headers).send(response.body);
+    
+    const responseBody = typeof response.body === 'object' ? 
+                        JSON.stringify(response.body) : 
+                        response.body;
+    
+    res.status(response.statusCode)
+       .set(response.headers)
+       .send(responseBody);
   } catch (error) {
     console.error("Error handling request:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error.message });
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      details: error.message 
+    });
   }
 });
 
@@ -56,22 +66,48 @@ app.get("/health", (req, res) => {
 
 function startGoServer(wasmPath, port = 3000) {
   return new Promise(async (resolve, reject) => {
+    let server = null;
     try {
       await initializeWasm(wasmPath);
-      const server = app.listen(port, "127.0.0.1", () => {
-        console.log(`API server is running on http://127.0.0.1:${port}`);
+      server = app.listen(port, "127.0.0.1", () => {
+        console.log(`Go API server is running on http://127.0.0.1:${port}`);
+        
+        // Add SIGINT handler
+        process.on('SIGINT', async () => {
+          console.log('\nReceived SIGINT. Shutting down Go server...');
+          if (server) {
+            server.close(() => {
+              console.log('Go server closed successfully');
+              process.exit(0);
+            });
+            
+            // Force close after 3 seconds if graceful shutdown fails
+            setTimeout(() => {
+              console.log('Force closing Go server...');
+              process.exit(1);
+            }, 2000);
+          }
+        });
+
         resolve(server);
       });
 
       server.on("error", (error) => {
-        console.error("Error in API server:", error);
+        console.error("Error in Go API server:", error);
         reject(error);
       });
 
       server.on("close", () => {
-        console.log("API server is shutting down");
+        console.log("Go API server is shutting down");
+        // Clean up any remaining WASM resources
+        if (wasmHandler) {
+          wasmHandler = null;
+        }
       });
     } catch (error) {
+      if (server) {
+        server.close();
+      }
       reject(error);
     }
   });

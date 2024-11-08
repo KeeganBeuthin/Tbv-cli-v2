@@ -76,7 +76,7 @@ async function stopCurrentServer() {
 }
 
 program
-  .command("serve <wasmFile>")
+  .command("serve-go <wasmFile>")
   .description("Start an HTTP server using the specified WebAssembly file")
   .option("-p, --port <number>", "Port to run the server on", 3000)
   .action(async (wasmFile, options) => {
